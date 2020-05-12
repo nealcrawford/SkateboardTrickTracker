@@ -46,9 +46,10 @@
 *********************************************************************************************************
 */
 
-#define APP_CFG_TASK_START_PRIO     2u
-#define APP_CFG_TASK1_PRIO          6u
-#define APP_CFG_TASK2_PRIO          8u
+#define APP_CFG_TASK_START_PRIO         2u
+#define APP_CFG_ACCELSAMPLETASK_PRIO    6u
+#define APP_CFG_TASK1_PRIO              8u
+#define APP_CFG_TASK2_PRIO              10u
 
 /*
 *********************************************************************************************************
@@ -56,8 +57,9 @@
 *********************************************************************************************************
 */
 
-#define APP_CFG_TASK_START_STK_SIZE 128u
-#define APP_CFG_TASK1_STK_SIZE      128u
-#define APP_CFG_TASK2_STK_SIZE      128u
+#define APP_CFG_TASK_START_STK_SIZE         128u
+#define APP_CFG_ACCELSAMPLETASK_STK_SIZE    128u
+#define APP_CFG_TASK1_STK_SIZE              128u
+#define APP_CFG_TASK2_STK_SIZE              128u
 
 #endif

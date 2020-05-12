@@ -37,8 +37,6 @@ void MMA8451RegWr(INT8U waddr, INT8U wdata);
 *************************************************************************/
 INT8U MMA8451RegRd(INT8U raddr);
 
-INT8U AccelSample();
-
 typedef struct {
     INT16U x;
     INT16U y;

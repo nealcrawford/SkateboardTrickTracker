@@ -144,7 +144,6 @@ static void AppTask1(void *p_arg){
 
     INT8U timcntr = 0;                              /* Counter for one second flag      */
     OS_ERR os_err;
-    INT8U AccelXData = 0;
     (void)p_arg;
     
     while(1){
@@ -154,7 +153,6 @@ static void AppTask1(void *p_arg){
         }
         DB1_TURN_ON();                          /* Turn on debug bit while ready/running*/
         LEDGREEN_TOGGLE();                          /* Toggle green LED                     */
-        AccelXData = AccelSample();
         timcntr++;
         if(timcntr == 10){                     /* Signal Task2 every second             */
             (void)OSTaskSemPost(&AppTask2TCB,OS_OPT_POST_NONE,&os_err);
