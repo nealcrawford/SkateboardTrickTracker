@@ -14,6 +14,9 @@
 #include "MCUType.h"
 #include "K22FRDM_ClkCfg.h"
 #include "K22FRDM_GPIO.h"
+#include "RN4871.h"
+#include "LSM6DS3US.h"
+#include "FXOS8700CQ.h"
 /*****************************************************************************************
 * Allocate task control blocks
 *****************************************************************************************/
@@ -92,6 +95,8 @@ static void AppStartTask(void *p_arg) {
 //    OSStatTaskCPUUsageInit(&os_err);
     GpioLEDMulticolorInit();
     GpioDBugBitsInit();
+    //BluetoothInit();
+    I2CInit();
 
     OSTaskCreate(&AppTask1TCB,                  /* Create Task 1                    */
                 "App Task1 ",
@@ -139,16 +144,17 @@ static void AppTask1(void *p_arg){
 
     INT8U timcntr = 0;                              /* Counter for one second flag      */
     OS_ERR os_err;
+    INT8U AccelXData = 0;
     (void)p_arg;
     
     while(1){
-    
         DB1_TURN_OFF();                             /* Turn off debug bit while waiting */
     	OSTimeDly(100,OS_OPT_TIME_PERIODIC,&os_err);     /* Task period = 100ms   */
         while(os_err != OS_ERR_NONE){                   /* Error Trap                   */
         }
         DB1_TURN_ON();                          /* Turn on debug bit while ready/running*/
         LEDGREEN_TOGGLE();                          /* Toggle green LED                     */
+        AccelXData = AccelSample();
         timcntr++;
         if(timcntr == 10){                     /* Signal Task2 every second             */
             (void)OSTaskSemPost(&AppTask2TCB,OS_OPT_POST_NONE,&os_err);
