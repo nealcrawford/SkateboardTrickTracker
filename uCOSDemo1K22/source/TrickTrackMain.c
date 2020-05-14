@@ -98,37 +98,37 @@ static void AppStartTask(void *p_arg) {
     //BluetoothInit();
     I2CInit();
 
-    OSTaskCreate(&AppTask1TCB,                  /* Create Task 1                    */
-                "App Task1 ",
-                AppTask1,
-                (void *) 0,
-                APP_CFG_TASK1_PRIO,
-                &AppTask1Stk[0],
-                (APP_CFG_TASK1_STK_SIZE / 10u),
-                APP_CFG_TASK1_STK_SIZE,
-                0,
-                0,
-                (void *) 0,
-                (OS_OPT_TASK_NONE),
-                &os_err);
-    while(os_err != OS_ERR_NONE){               /* Error Trap                       */
-    }
-
-    OSTaskCreate(&AppTask2TCB,    /* Create Task 2                    */
-                "App Task2 ",
-                AppTask2,
-                (void *) 0,
-                APP_CFG_TASK2_PRIO,
-                &AppTask2Stk[0],
-                (APP_CFG_TASK2_STK_SIZE / 10u),
-                APP_CFG_TASK2_STK_SIZE,
-                0,
-                0,
-                (void *) 0,
-                (OS_OPT_TASK_NONE),
-                &os_err);
-    while(os_err != OS_ERR_NONE){               /* Error Trap                       */
-    }
+//    OSTaskCreate(&AppTask1TCB,                  /* Create Task 1                    */
+//                "App Task1 ",
+//                AppTask1,
+//                (void *) 0,
+//                APP_CFG_TASK1_PRIO,
+//                &AppTask1Stk[0],
+//                (APP_CFG_TASK1_STK_SIZE / 10u),
+//                APP_CFG_TASK1_STK_SIZE,
+//                0,
+//                0,
+//                (void *) 0,
+//                (OS_OPT_TASK_NONE),
+//                &os_err);
+//    while(os_err != OS_ERR_NONE){               /* Error Trap                       */
+//    }
+//
+//    OSTaskCreate(&AppTask2TCB,    /* Create Task 2                    */
+//                "App Task2 ",
+//                AppTask2,
+//                (void *) 0,
+//                APP_CFG_TASK2_PRIO,
+//                &AppTask2Stk[0],
+//                (APP_CFG_TASK2_STK_SIZE / 10u),
+//                APP_CFG_TASK2_STK_SIZE,
+//                0,
+//                0,
+//                (void *) 0,
+//                (OS_OPT_TASK_NONE),
+//                &os_err);
+//    while(os_err != OS_ERR_NONE){               /* Error Trap                       */
+//    }
 
     OSTaskSuspend((OS_TCB *)0, &os_err);
     while(os_err != OS_ERR_NONE){                   /* Error Trap                   */

@@ -35,7 +35,7 @@ void MMA8451RegWr(INT8U waddr, INT8U wdata);
 *   raddr is the register address to read
 *   return value is the value read
 *************************************************************************/
-INT8U MMA8451RegRd(INT8U raddr);
+void MMA8451RegRd(INT8U raddr, INT8U* accelDataBuffer);
 
 typedef struct {
     INT16U x;
