@@ -58,7 +58,7 @@ void I2CInit(void){
     OSSemCreate(&I2CReadyFlag,"I2CReady Semaphore",0,&os_err);
     OSSemCreate(&ReadStartFlag,"ReadStart Semaphore",0,&os_err);
     SIM->SCGC4 |= SIM_SCGC4_I2C0_MASK;               /*Turn on I2C clock                */
-    SIM->SCGC5 |= SIM_SCGC5_PORTE_MASK;              /*Turn on PORTE clock              */
+    SIM->SCGC5 |= SIM_SCGC5_PORTB_MASK;              /*Turn on PORTB clock              */
 
     PORTB->PCR[2] = PORT_PCR_MUX(2)|PORT_PCR_ODE(1);  /* Configure GPIO for I2C0         */
     PORTB->PCR[3] = PORT_PCR_MUX(2)|PORT_PCR_ODE(1);  /* and open drain                  */
@@ -218,7 +218,7 @@ void I2C0_IRQHandler() {
     OS_ERR os_err;
     OSIntEnter();
 
-    I2C0->S = I2C_S_IICIF(1); // Clear interrupt flag
+    I2C0->S |= I2C_S_IICIF_MASK;
     (void)OSSemPost(&I2CReadyFlag, OS_OPT_POST_1, &os_err);
 
     OSIntExit();

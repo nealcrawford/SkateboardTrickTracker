@@ -21,23 +21,17 @@
 * Allocate task control blocks
 *****************************************************************************************/
 static OS_TCB AppTaskStartTCB;
-static OS_TCB AppTask1TCB;
-static OS_TCB AppTask2TCB;
 
 /*****************************************************************************************
 * Allocate task stack space.
 *****************************************************************************************/
 static CPU_STK AppTaskStartStk[APP_CFG_TASK_START_STK_SIZE];
-static CPU_STK AppTask1Stk[APP_CFG_TASK1_STK_SIZE];
-static CPU_STK AppTask2Stk[APP_CFG_TASK2_STK_SIZE];
 
 /*****************************************************************************************
 * Task Function Prototypes. 
 *   - Private if in the same module as startup task. Otherwise public.
 *****************************************************************************************/
 static void  AppStartTask(void *p_arg);
-static void  AppTask1(void *p_arg);
-static void  AppTask2(void *p_arg);
 
 /*****************************************************************************************
 * main()
@@ -92,100 +86,15 @@ static void AppStartTask(void *p_arg) {
      * Therefore, any function call that creates a new task must come after this line.
      * Or, alternatively, you can comment out this line, or remove it. If you do, you
      * will not have accurate CPU load information                                       */
-//    OSStatTaskCPUUsageInit(&os_err);
+
     GpioLEDMulticolorInit();
     GpioDBugBitsInit();
     //BluetoothInit();
     I2CInit();
 
-//    OSTaskCreate(&AppTask1TCB,                  /* Create Task 1                    */
-//                "App Task1 ",
-//                AppTask1,
-//                (void *) 0,
-//                APP_CFG_TASK1_PRIO,
-//                &AppTask1Stk[0],
-//                (APP_CFG_TASK1_STK_SIZE / 10u),
-//                APP_CFG_TASK1_STK_SIZE,
-//                0,
-//                0,
-//                (void *) 0,
-//                (OS_OPT_TASK_NONE),
-//                &os_err);
-//    while(os_err != OS_ERR_NONE){               /* Error Trap                       */
-//    }
-//
-//    OSTaskCreate(&AppTask2TCB,    /* Create Task 2                    */
-//                "App Task2 ",
-//                AppTask2,
-//                (void *) 0,
-//                APP_CFG_TASK2_PRIO,
-//                &AppTask2Stk[0],
-//                (APP_CFG_TASK2_STK_SIZE / 10u),
-//                APP_CFG_TASK2_STK_SIZE,
-//                0,
-//                0,
-//                (void *) 0,
-//                (OS_OPT_TASK_NONE),
-//                &os_err);
-//    while(os_err != OS_ERR_NONE){               /* Error Trap                       */
-//    }
-
+//    OSStatTaskCPUUsageInit(&os_err);
     OSTaskSuspend((OS_TCB *)0, &os_err);
     while(os_err != OS_ERR_NONE){                   /* Error Trap                   */
-    }
-}
-
-/*****************************************************************************************
-* TASK #1
-* Uses OSTimeDelay to signal the Task2 semaphore every second.
-* It also toggles the green LED every 100ms.
-*****************************************************************************************/
-static void AppTask1(void *p_arg){
-
-    INT8U timcntr = 0;                              /* Counter for one second flag      */
-    OS_ERR os_err;
-    (void)p_arg;
-    
-    while(1){
-        DB1_TURN_OFF();                             /* Turn off debug bit while waiting */
-    	OSTimeDly(100,OS_OPT_TIME_PERIODIC,&os_err);     /* Task period = 100ms   */
-        while(os_err != OS_ERR_NONE){                   /* Error Trap                   */
-        }
-        DB1_TURN_ON();                          /* Turn on debug bit while ready/running*/
-        LEDGREEN_TOGGLE();                          /* Toggle green LED                     */
-        timcntr++;
-        if(timcntr == 10){                     /* Signal Task2 every second             */
-            (void)OSTaskSemPost(&AppTask2TCB,OS_OPT_POST_NONE,&os_err);
-            while(os_err != OS_ERR_NONE){           /* Error Trap                       */
-            }
-            timcntr = 0;
-        }else{
-        }
-    }
-}
-
-/*****************************************************************************************
-* TASK #2
-* Pends on its semaphore and toggles the blue LED every second
-*****************************************************************************************/
-static void AppTask2(void *p_arg){
-
-    OS_ERR os_err;
-
-    (void)p_arg;
-
-    while(1) {                                  /* wait for Task 1 to signal semaphore  */
-
-        DB2_TURN_OFF();                         /* Turn off debug bit while waiting     */
-        OSTaskSemPend(0,                        /* No timeout                           */
-                      OS_OPT_PEND_BLOCKING,     /* Block until posted                   */
-                      (void *)0,                /* No timestamp                         */
-                      &os_err);
-        while(os_err != OS_ERR_NONE){           /* Error Trap                           */
-        }
-        DB2_TURN_ON();                          /* Turn on debug bit while ready/running*/
-        LEDRED_TOGGLE();                         /* Toggle red LED                    */
-        LEDBLUE_TOGGLE();                         /* Toggle blue LED                    */
     }
 }
 
