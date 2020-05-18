@@ -12,9 +12,11 @@
 #include "MCUType.h"
 #include "K22FRDM_ClkCfg.h"
 #include "K22FRDM_GPIO.h"
-#include "RN4871.h"
 #include "FXOS8700CQ.h"
 
+#define LDVAL_800HZ 62499   // (50MHz / 800 Hz) - 1
+
+void PITInit(void);
 
 /*****************************************************************************************
 * main()
@@ -24,11 +26,34 @@ void main(void) {
     K22FRDM_BootClock();
     GpioLEDMulticolorInit();
     GpioDBugBitsInit();
+    PITInit();
     //BluetoothInit();
-    I2CInit();
-    while (1) {
+    AccelInit();
 
+    while (1) {
+        while((PIT->CHANNEL[0].TFLG & (PIT_TFLG_TIF_MASK)) == 0) {}
+        PIT->CHANNEL[0].TFLG = PIT_TFLG_TIF(1);
+        AccelSampleTask();
     }
 }
+
+
+void PITInit() {
+    SIM->SCGC6 |= SIM_SCGC6_PIT(1);  // Enable PIT module
+    PIT->MCR = PIT_MCR_MDIS(0);     // Enable clock for standard PIT timers
+    PIT->CHANNEL[0].LDVAL = LDVAL_800HZ;
+    PIT->CHANNEL[0].TCTRL = PIT_TCTRL_TEN(1); // Enable interrupts and PIT Timer
+}
+
+///****************************************************************************************
+//* PIT0_IRQHandler() - Initiate next I2C read, runs on 1.25ms interval.
+//****************************************************************************************/
+//void PIT0_IRQHandler() {
+//
+//    PIT->CHANNEL[0].TFLG = PIT_TFLG_TIF(1); // Clear interrupt flag
+//    PITFlag++;
+//
+//}
+
 
 /********************************************************************************/

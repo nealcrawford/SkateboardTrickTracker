@@ -19,7 +19,7 @@
 /*********************************************************************************
  * Standard types to include
  ********************************************************************************/
-#define APP_TYPE_UCOS_EN    1
+#define APP_TYPE_UCOS_EN    0
 #define APP_TYPE_CMSIS_EN   0
 #define APP_TYPE_WWU_EN     1
 #define APP_TYPE_C99_EN     1

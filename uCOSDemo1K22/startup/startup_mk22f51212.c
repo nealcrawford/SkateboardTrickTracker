@@ -68,7 +68,6 @@ extern "C" {
 #endif
 
 #include "MCUType.h"
-#include <uCOS/uC-CPU/os_cpu.h>     //Dependent on os_cpu for handler names
 //*****************************************************************************
 // Private function prototypes
 //*****************************************************************************
@@ -319,8 +318,6 @@ void (* const g_pfnVectors[])(void) = {
     SVC_Handler,                       // SVCall handler
     DebugMon_Handler,                  // Debug monitor handler
     0,                                 // Reserved
-    OS_CPU_PendSVHandler,              // The PendSV handle for MicroC/OS
-    OS_CPU_SysTickHandler,             // The SysTick handler for MicroC/OS
 
     // Chip Level - MK22F51212
     DMA0_IRQHandler,            // 16: DMA Channel 0 Transfer Complete

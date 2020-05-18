@@ -17,7 +17,6 @@
 #include "MCUType.h"
 #include "FXOS8700CQ.h"
 
-#define LDVAL_800HZ 74999   // (60MHz / 800 Hz) - 1
 /****************************************************************************************
 * Function prototypes (Private)
 ****************************************************************************************/
@@ -25,54 +24,31 @@ static void I2CWr(INT8U dout);
 static void I2CRd(INT8U* accelDataBuffer);
 static void I2CStop(void);
 static void I2CStart(void);
-static void I2C0Pend(void);
 static void BusFreeDly(void);
-
-static void accelSampleTask(void *p_arg);
-
-/****************************************************************************************
-* Interrupt prototypes
-****************************************************************************************/
-void PIT0_IRQHandler(void);
 
 
 /****************************************************************************************
 * Private variables
 ****************************************************************************************/
-static OS_TCB accelSampleTaskTCB;
-static CPU_STK accelSampleTaskStk[APP_CFG_ACCELSAMPLETASK_STK_SIZE];
 static ACCEL_DATA_3D AccelData3D;
-
-static OS_SEM I2CReadyFlag;
-static OS_SEM ReadStartFlag;
 
 /****************************************************************************************
 * I2CInit - Initialize I2C for the MMA8451Q
 ****************************************************************************************/
-void I2CInit(void){
-    OS_ERR os_err;
-
+void AccelInit(void){
     SIM->SCGC4 |= SIM_SCGC4_I2C0_MASK;               /*Turn on I2C clock                */
     SIM->SCGC5 |= SIM_SCGC5_PORTB_MASK;              /*Turn on PORTB clock              */
 
     PORTB->PCR[2] = PORT_PCR_MUX(2)|PORT_PCR_ODE(1);  /* Configure GPIO for I2C0         */
     PORTB->PCR[3] = PORT_PCR_MUX(2)|PORT_PCR_ODE(1);  /* and open drain                  */
 
-    I2C0->F  = 0x2c;                                 /* Set SCL to 104kHz               */
+    I2C0->F  = 0x27;                /* Set SCL to 104kHz               */
     I2C0->C1 |= I2C_C1_IICEN(1);    /* Enable I2C0 and interrupts    */
 
     MMA8451RegWr(MMA8451_CTRL_REG1, 0x00); // Put accelerometer into standby mode
     MMA8451RegWr(0x5B, 0x00); // Only accelerometer active
     MMA8451RegWr(MMA8451_XYZ_DATA_CFG, 0x01); // Configure for +/- 4g accelerometer range
     MMA8451RegWr(MMA8451_CTRL_REG1, 0x05); // Set 800 Hz ODR, Normal 16-bit read, low noise mode, bring accelerometer out of standby
-
-    SIM->SCGC6 = SIM_SCGC6_PIT(1);  // Enable PIT module
-    PIT->MCR = PIT_MCR_MDIS(0);     // Enable clock for standard PIT timers
-    PIT->CHANNEL[0].LDVAL = LDVAL_800HZ;
-    PIT->CHANNEL[0].TCTRL = (PIT_TCTRL_TIE(1) | PIT_TCTRL_TEN(1)); // Enable interrupts and PIT Timer
-
-    NVIC_ClearPendingIRQ(PIT0_IRQn); // Enable interrupt routines
-    NVIC_EnableIRQ(PIT0_IRQn);
 }
 
 /****************************************************************************************
@@ -163,7 +139,7 @@ static void BusFreeDly(void){
 /****************************************************************************************
 * accelSampleTask - Read 3D acceleration data every 1.25ms
 ****************************************************************************************/
-static void accelSampleTask(void *p_arg) {
+void AccelSampleTask() {
     INT8U dataBuffer[6] = {0, 0, 0, 0, 0, 0};
 
     while(1) {
@@ -176,16 +152,4 @@ static void accelSampleTask(void *p_arg) {
 
         // if ping pong buffer half full, post trick identify task semaphore
     }
-}
-
-/****************************************************************************************
-* PIT0_IRQHandler() - Initiate next I2C read, runs on 1ms interval.
-****************************************************************************************/
-void PIT0_IRQHandler() {
-    OS_ERR os_err;
-    OSIntEnter();
-
-    PIT->CHANNEL[0].TFLG = PIT_TFLG_TIF(1); // Clear interrupt flag
-
-    OSIntExit();
 }

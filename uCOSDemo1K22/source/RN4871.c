@@ -6,10 +6,7 @@
  */
 
 #include "MCUType.h"
-#include "uCOS/uC-CFG/app_cfg.h"
-#include "MCUType.h"
 #include "RN4871.h"
-#include "uCOS/uCOS-III/os.h"
 
 INT8C BIORead(void);
 void BIOWrite(INT8C c);

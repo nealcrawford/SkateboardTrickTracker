@@ -19,7 +19,10 @@
 *************************************************************************
 * I2CInit - Initialize I2C for the MMA8451
 *************************************************************************/
-void I2CInit(void);
+void AccelInit(void);
+
+void AccelSampleTask(void);
+
 
 /*************************************************************************
 * MMA8451RegWr - Write to MMA8451 register. Blocks until Xmit is complete.
