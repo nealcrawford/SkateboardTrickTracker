@@ -16,8 +16,6 @@
 ****************************************************************************************/
 #include "MCUType.h"
 #include "FXOS8700CQ.h"
-#include <uCOS/uC-CFG/app_cfg.h>
-#include <uCOS/uCOS-III/os.h>
 
 #define LDVAL_800HZ 74999   // (60MHz / 800 Hz) - 1
 /****************************************************************************************
@@ -35,7 +33,6 @@ static void accelSampleTask(void *p_arg);
 /****************************************************************************************
 * Interrupt prototypes
 ****************************************************************************************/
-void I2C0_IRQHandler(void);
 void PIT0_IRQHandler(void);
 
 
@@ -55,8 +52,6 @@ static OS_SEM ReadStartFlag;
 void I2CInit(void){
     OS_ERR os_err;
 
-    OSSemCreate(&I2CReadyFlag,"I2CReady Semaphore",0,&os_err);
-    OSSemCreate(&ReadStartFlag,"ReadStart Semaphore",0,&os_err);
     SIM->SCGC4 |= SIM_SCGC4_I2C0_MASK;               /*Turn on I2C clock                */
     SIM->SCGC5 |= SIM_SCGC5_PORTB_MASK;              /*Turn on PORTB clock              */
 
@@ -64,10 +59,7 @@ void I2CInit(void){
     PORTB->PCR[3] = PORT_PCR_MUX(2)|PORT_PCR_ODE(1);  /* and open drain                  */
 
     I2C0->F  = 0x2c;                                 /* Set SCL to 104kHz               */
-    I2C0->C1 |= I2C_C1_IICEN(1) | I2C_C1_IICIE(1);    /* Enable I2C0 and interrupts    */
-
-    NVIC_ClearPendingIRQ(I2C0_IRQn);
-    NVIC_EnableIRQ(I2C0_IRQn);
+    I2C0->C1 |= I2C_C1_IICEN(1);    /* Enable I2C0 and interrupts    */
 
     MMA8451RegWr(MMA8451_CTRL_REG1, 0x00); // Put accelerometer into standby mode
     MMA8451RegWr(0x5B, 0x00); // Only accelerometer active
@@ -78,21 +70,6 @@ void I2CInit(void){
     PIT->MCR = PIT_MCR_MDIS(0);     // Enable clock for standard PIT timers
     PIT->CHANNEL[0].LDVAL = LDVAL_800HZ;
     PIT->CHANNEL[0].TCTRL = (PIT_TCTRL_TIE(1) | PIT_TCTRL_TEN(1)); // Enable interrupts and PIT Timer
-
-    OSTaskCreate(&accelSampleTaskTCB,
-        "Accel Sample Task ",
-        accelSampleTask,
-        (void *) 0,
-        APP_CFG_ACCELSAMPLETASK_PRIO,
-        &accelSampleTaskStk[0],
-        (APP_CFG_ACCELSAMPLETASK_STK_SIZE / 10u),
-        APP_CFG_ACCELSAMPLETASK_STK_SIZE,
-        0,
-        0,
-        (void *) 0,
-        (OS_OPT_TASK_NONE),
-        &os_err
-    );
 
     NVIC_ClearPendingIRQ(PIT0_IRQn); // Enable interrupt routines
     NVIC_EnableIRQ(PIT0_IRQn);
@@ -132,7 +109,8 @@ void MMA8451RegRd(INT8U raddr, INT8U* accelDataBuffer){
 ****************************************************************************************/
 static void I2CWr(INT8U dout){
     I2C0->D = dout;                              /* Send data/address                   */
-    I2C0Pend();
+    while((I2C0->S & I2C_S_IICIF_MASK) == 0) {}  /* Wait for completion                 */
+    I2C0->S |= I2C_S_IICIF(1);                 /* Clear IICIF flag                    */
 }
 
 /****************************************************************************************
@@ -145,11 +123,13 @@ static void I2CRd(INT8U* accelDataBuffer){
     I2C0->C1 &= (INT8U)(~I2C_C1_TX_MASK);               /*Set to master receive mode           */
     I2C0->C1 &= ~I2C_C1_TXAK_MASK;                /*Set to ack on read                */
     din = I2C0->D;                               /*Dummy read to generate clock cycles  */
-    I2C0Pend();
+    while((I2C0->S & I2C_S_IICIF_MASK) == 0) {}  /* Wait for completion                 */
+    I2C0->S |= I2C_S_IICIF(1);                 /* Clear IICIF flag                    */
     for (INT8U index = 0; index < 5; index++) {
         // Read the 6 transmitted values into buffer
         accelDataBuffer[index] = I2C0->D; // Read data being clocked in
-        I2C0Pend();
+        while((I2C0->S & I2C_S_IICIF_MASK) == 0) {}  /* Wait for completion                 */
+        I2C0->S |= I2C_S_IICIF(1);                 /* Clear IICIF flag                    */
     }
     I2C0->C1 |= I2C_C1_TXAK_MASK;               // Send NACK to end transmission
     I2CStop();                                  /* Send Stop                           */
@@ -184,13 +164,9 @@ static void BusFreeDly(void){
 * accelSampleTask - Read 3D acceleration data every 1.25ms
 ****************************************************************************************/
 static void accelSampleTask(void *p_arg) {
-    OS_ERR os_err;
-    (void)p_arg;
     INT8U dataBuffer[6] = {0, 0, 0, 0, 0, 0};
 
     while(1) {
-        (void)OSSemPend(&ReadStartFlag,0, OS_OPT_PEND_BLOCKING, (CPU_TS *)0, &os_err); // Pend on PIT
-        while(os_err != OS_ERR_NONE){} /* Error Trap */
         MMA8451RegRd(MMA8451_OUT_X_MSB, dataBuffer); // Burst read acceleration data output registers, providing start address.
 
         // Copy 14-bit acceleration data from buffer to accel. data structure
@@ -203,29 +179,6 @@ static void accelSampleTask(void *p_arg) {
 }
 
 /****************************************************************************************
-* I2C0Pend - Allows the sampling task to pend on a single semaphore using this function
-****************************************************************************************/
-static void I2C0Pend() {
-    OS_ERR os_err;
-    (void)OSSemPend(&I2CReadyFlag,0, OS_OPT_PEND_BLOCKING, (CPU_TS *)0, &os_err);
-    while(os_err != OS_ERR_NONE){} /* Error Trap */
-}
-
-/****************************************************************************************
-* I2C0_IRQHandler - When I2C read/write is complete, return to sampling task by posting I2C0Pend semaphore
-****************************************************************************************/
-void I2C0_IRQHandler() {
-    OS_ERR os_err;
-    OSIntEnter();
-
-    I2C0->S |= I2C_S_IICIF_MASK;
-    (void)OSSemPost(&I2CReadyFlag, OS_OPT_POST_1, &os_err);
-
-    OSIntExit();
-}
-
-
-/****************************************************************************************
 * PIT0_IRQHandler() - Initiate next I2C read, runs on 1ms interval.
 ****************************************************************************************/
 void PIT0_IRQHandler() {
@@ -233,7 +186,6 @@ void PIT0_IRQHandler() {
     OSIntEnter();
 
     PIT->CHANNEL[0].TFLG = PIT_TFLG_TIF(1); // Clear interrupt flag
-    (void)OSSemPost(&ReadStartFlag, OS_OPT_POST_1, &os_err);
 
     OSIntExit();
 }
