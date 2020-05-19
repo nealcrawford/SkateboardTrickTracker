@@ -99,15 +99,15 @@ static void I2CRd(INT8U* accelDataBuffer){
     I2C0->C1 &= (INT8U)(~I2C_C1_TX_MASK);               /*Set to master receive mode           */
     I2C0->C1 &= ~I2C_C1_TXAK_MASK;                /*Set to ack on read                */
     din = I2C0->D;                               /*Dummy read to generate clock cycles  */
-    while((I2C0->S & I2C_S_IICIF_MASK) == 0) {}  /* Wait for completion                 */
-    I2C0->S |= I2C_S_IICIF(1);                 /* Clear IICIF flag                    */
     for (INT8U index = 0; index < 5; index++) {
         // Read the 6 transmitted values into buffer
-        accelDataBuffer[index] = I2C0->D; // Read data being clocked in
         while((I2C0->S & I2C_S_IICIF_MASK) == 0) {}  /* Wait for completion                 */
         I2C0->S |= I2C_S_IICIF(1);                 /* Clear IICIF flag                    */
+        accelDataBuffer[index] = I2C0->D; // Read data being clocked in
     }
     I2C0->C1 |= I2C_C1_TXAK_MASK;               // Send NACK to end transmission
+    while((I2C0->S & I2C_S_IICIF_MASK) == 0) {}  /* Wait for completion                 */
+    I2C0->S |= I2C_S_IICIF(1);                 /* Clear IICIF flag                    */
     I2CStop();                                  /* Send Stop                           */
     accelDataBuffer[6] = I2C0->D;               /* Read final byte that was clocked in       */
 }
