@@ -24,8 +24,6 @@ static void I2CWr(INT8U dout);
 static void I2CRd(INT8U* accelDataBuffer);
 static void I2CStop(void);
 static void I2CStart(void);
-static void BusFreeDly(void);
-
 
 /****************************************************************************************
 * Private variables
@@ -44,6 +42,7 @@ void AccelInit(void){
 
     I2C0->F  = 0x27;                /* Set SCL to 104kHz               */
     I2C0->C1 |= I2C_C1_IICEN(1);    /* Enable I2C0 and interrupts    */
+    I2C0->S |= I2C_S_IICIF(1);                 /* Clear IICIF flag                    */
 
     MMA8451RegWr(MMA8451_CTRL_REG1, 0x00); // Put accelerometer into standby mode
     MMA8451RegWr(0x5B, 0x00); // Only accelerometer active
@@ -99,7 +98,7 @@ static void I2CRd(INT8U* accelDataBuffer){
     I2C0->C1 &= (INT8U)(~I2C_C1_TX_MASK);               /*Set to master receive mode           */
     I2C0->C1 &= ~I2C_C1_TXAK_MASK;                /*Set to ack on read                */
     din = I2C0->D;                               /*Dummy read to generate clock cycles  */
-    for (INT8U index = 0; index < 5; index++) {
+    for (INT8U index = 0; index < 7; index++) {
         // Read the 6 transmitted values into buffer
         while((I2C0->S & I2C_S_IICIF_MASK) == 0) {}  /* Wait for completion                 */
         I2C0->S |= I2C_S_IICIF(1);                 /* Clear IICIF flag                    */
@@ -117,8 +116,9 @@ static void I2CRd(INT8U* accelDataBuffer){
 static void I2CStop(void){
     I2C0->C1 &= (INT8U)(~I2C_C1_MST_MASK);
     I2C0->C1 &= (INT8U)(~I2C_C1_TX_MASK);
-    BusFreeDly();
+    for(INT8U i = 0; i < 250; i++ ){} // Delay for bus free time, 1.3us
 }
+
 /****************************************************************************************
 * I2CStart - Generate a Start sequence to grab the I2C bus.
 ****************************************************************************************/
@@ -126,30 +126,18 @@ static void I2CStart(void){
     I2C0->C1 |= I2C_C1_TX_MASK;
     I2C0->C1 |= I2C_C1_MST_MASK;
 }
-/****************************************************************************************
-* BusFreeDly - Generate a short delay for the minimum bus free time, 1.3us
-****************************************************************************************/
-static void BusFreeDly(void){
-    for(INT8U i = 0; i < 250; i++ ){
-        /* wait */
-    }
-}
-/***************************************************************************************/
 
 /****************************************************************************************
-* accelSampleTask - Read 3D acceleration data every 1.25ms
+* AccelSampleTask - Read 3D acceleration data every 1.25ms
 ****************************************************************************************/
 void AccelSampleTask() {
-    INT8U dataBuffer[6] = {0, 0, 0, 0, 0, 0};
+    INT8U dataBuffer[7] = {0, 0, 0, 0, 0, 0, 0};
 
-    while(1) {
-        MMA8451RegRd(MMA8451_OUT_X_MSB, dataBuffer); // Burst read acceleration data output registers, providing start address.
+    MMA8451RegRd(MMA8451_STATUS, dataBuffer); // Burst read acceleration data output registers, providing start address.
 
-        // Copy 14-bit acceleration data from buffer to accel. data structure
-        AccelData3D.x = (INT16U)(((dataBuffer[0] << 8) | dataBuffer[1]))>> 2;
-        AccelData3D.y = (INT16U)(((dataBuffer[2] << 8) | dataBuffer[3]))>> 2;
-        AccelData3D.z = (INT16U)(((dataBuffer[4] << 8) | dataBuffer[5]))>> 2;
+    // Copy 14-bit acceleration data from buffer to accel. data structure
+    AccelData3D.x = (INT16S)(((dataBuffer[1] << 8) | dataBuffer[2]))>> 2;
+    AccelData3D.y = (INT16S)(((dataBuffer[3] << 8) | dataBuffer[4]))>> 2;
+    AccelData3D.z = (INT16S)(((dataBuffer[5] << 8) | dataBuffer[6]))>> 2;
 
-        // if ping pong buffer half full, post trick identify task semaphore
-    }
 }

@@ -41,9 +41,9 @@ void MMA8451RegWr(INT8U waddr, INT8U wdata);
 void MMA8451RegRd(INT8U raddr, INT8U* accelDataBuffer);
 
 typedef struct {
-    INT16U x;
-    INT16U y;
-    INT16U z;
+    INT16S x;
+    INT16S y;
+    INT16S z;
 } ACCEL_DATA_3D;
 
 /*************************************************************************
