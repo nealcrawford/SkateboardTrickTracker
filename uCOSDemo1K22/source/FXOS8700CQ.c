@@ -28,7 +28,6 @@ static void I2CStart(void);
 /****************************************************************************************
 * Private variables
 ****************************************************************************************/
-static ACCEL_DATA_3D AccelData3D;
 
 /****************************************************************************************
 * I2CInit - Initialize I2C for the MMA8451Q
@@ -130,14 +129,14 @@ static void I2CStart(void){
 /****************************************************************************************
 * AccelSampleTask - Read 3D acceleration data every 1.25ms
 ****************************************************************************************/
-void AccelSampleTask() {
+void AccelSampleTask(ACCEL_DATA_3D* accelData) {
     INT8U dataBuffer[7] = {0, 0, 0, 0, 0, 0, 0};
 
     MMA8451RegRd(MMA8451_STATUS, dataBuffer); // Burst read acceleration data output registers, providing start address.
 
     // Copy 14-bit acceleration data from buffer to accel. data structure
-    AccelData3D.x = (INT16S)(((dataBuffer[1] << 8) | dataBuffer[2]))>> 2;
-    AccelData3D.y = (INT16S)(((dataBuffer[3] << 8) | dataBuffer[4]))>> 2;
-    AccelData3D.z = (INT16S)(((dataBuffer[5] << 8) | dataBuffer[6]))>> 2;
+    accelData->x = (INT16S)(((dataBuffer[1] << 8) | dataBuffer[2]))>> 2;
+    accelData->y = (INT16S)(((dataBuffer[3] << 8) | dataBuffer[4]))>> 2;
+    accelData->z = (INT16S)(((dataBuffer[5] << 8) | dataBuffer[6]))>> 2;
 
 }

@@ -17,6 +17,22 @@
 #define LDVAL_800HZ 62499   // (50MHz / 800 Hz) - 1
 
 void PITInit(void);
+static INT16U TrickIdentify(void);
+static void FillAccelBuffers(void);
+
+#define SAMPLES_PER_BLOCK 800
+
+static ACCEL_DATA_3D AccelData3D;
+static INT16S AccelSamplesX[SAMPLES_PER_BLOCK];
+static INT16S AccelSamplesY[SAMPLES_PER_BLOCK];
+static INT16S AccelSamplesZ[SAMPLES_PER_BLOCK];
+
+static INT16U bufferIndex;
+static INT8U IdentifyFlag;
+
+static INT16S AccelResultsX[SAMPLES_PER_BLOCK];
+static INT16S AccelResultsY[SAMPLES_PER_BLOCK];
+static INT16S AccelResultsZ[SAMPLES_PER_BLOCK];
 
 /*****************************************************************************************
 * main()
@@ -29,12 +45,47 @@ void main(void) {
     PITInit();
     //BluetoothInit();
     AccelInit();
+    bufferIndex = 0;
+    IdentifyFlag = 0;
+    INT16U currentScore = 0;
+    INT32U timingCounter = 0;
 
     while (1) {
-        while((PIT->CHANNEL[0].TFLG & (PIT_TFLG_TIF_MASK)) == 0) {}
+        timingCounter =  0;
+        while((PIT->CHANNEL[0].TFLG & (PIT_TFLG_TIF_MASK)) == 0) {
+            timingCounter++;
+        }
+        if (timingCounter == 0) {
+            while(1) {} // If in this trap, we failed timing
+        }
         PIT->CHANNEL[0].TFLG = PIT_TFLG_TIF(1);
-        AccelSampleTask();
+        AccelSampleTask(&AccelData3D);
+        FillAccelBuffers();
+        if (IdentifyFlag == 1) {
+            currentScore = TrickIdentify();
+        }
     }
+}
+
+void FillAccelBuffers() {
+    AccelSamplesX[bufferIndex] = AccelData3D.x - (INT16S)70;
+    AccelSamplesY[bufferIndex] = AccelData3D.y + (INT16S)200;
+    AccelSamplesZ[bufferIndex] = AccelData3D.z - (INT16S)2112;
+    bufferIndex++;
+    if (bufferIndex == SAMPLES_PER_BLOCK) {
+        IdentifyFlag = 1;
+        bufferIndex = 0;
+    }
+}
+
+INT16U TrickIdentify() {
+    IdentifyFlag = 0;
+    arm_abs_q15(AccelSamplesX, AccelResultsX, SAMPLES_PER_BLOCK);
+    INT32U score = 0;
+    for (INT16U i = 0; i < SAMPLES_PER_BLOCK; i++) {
+        score += AccelResultsX[i];
+    }
+    return (INT16U)(score/4000);
 }
 
 

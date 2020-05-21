@@ -14,6 +14,13 @@
  ***********************************************************************/
 #ifndef ACCEL_DEF
 #define ACCEL_DEF
+
+typedef struct {
+    INT16S x;
+    INT16S y;
+    INT16S z;
+} ACCEL_DATA_3D;
+
 /************************************************************************
 * Public Functions
 *************************************************************************
@@ -21,7 +28,7 @@
 *************************************************************************/
 void AccelInit(void);
 
-void AccelSampleTask(void);
+void AccelSampleTask(ACCEL_DATA_3D* accelData);
 
 
 /*************************************************************************
@@ -40,11 +47,7 @@ void MMA8451RegWr(INT8U waddr, INT8U wdata);
 *************************************************************************/
 void MMA8451RegRd(INT8U raddr, INT8U* accelDataBuffer);
 
-typedef struct {
-    INT16S x;
-    INT16S y;
-    INT16S z;
-} ACCEL_DATA_3D;
+
 
 /*************************************************************************
 * MMA8451 Accelerometer Defines - Read/Write addresses.
