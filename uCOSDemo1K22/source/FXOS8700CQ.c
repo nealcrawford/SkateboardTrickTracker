@@ -46,6 +46,7 @@ void AccelInit(void){
     MMA8451RegWr(MMA8451_CTRL_REG1, 0x00); // Put accelerometer into standby mode
     MMA8451RegWr(0x5B, 0x00); // Only accelerometer active
     MMA8451RegWr(MMA8451_XYZ_DATA_CFG, 0x01); // Configure for +/- 4g accelerometer range
+    // Breakpoint immediately below this line allows for confirmation that accelerometer is not in a "stuck" state out of startup
     MMA8451RegWr(MMA8451_CTRL_REG1, 0x05); // Set 800 Hz ODR, Normal 16-bit read, low noise mode, bring accelerometer out of standby
 }
 
