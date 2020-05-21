@@ -1,13 +1,6 @@
 /*****************************************************************************************
-* A simple demo program for uCOS-III.
-* It tests multitasking, the timer, and task semaphores.
-* This version is written for the K65TWR board, LED8 and LED9.
-* If uCOS is working the green LED should toggle every 100ms and the blue LED
-* should toggle every 1 second.
-* Version 2017.2
-* 01/06/2017, Todd Morton
-* Version 2018.1 First working version for MCUXpresso
-* 12/06/2018 Todd Morton
+* A skate board trick-tracking program.
+* 05/07/2020, Neal Crawford
 *****************************************************************************************/
 #include "MCUType.h"
 #include "K22FRDM_ClkCfg.h"
@@ -23,10 +16,16 @@ static void FillAccelBuffers(void);
 
 #define SAMPLES_PER_BLOCK 800
 
+typedef struct {
+    INT16S AccelX[SAMPLES_PER_BLOCK];
+    INT16S AccelY[SAMPLES_PER_BLOCK];
+    INT16S AccelZ[SAMPLES_PER_BLOCK];
+} SAMPLES_BUFFER_T;
+
 static ACCEL_DATA_3D AccelData3D;
-static INT16S AccelSamplesX[SAMPLES_PER_BLOCK];
-static INT16S AccelSamplesY[SAMPLES_PER_BLOCK];
-static INT16S AccelSamplesZ[SAMPLES_PER_BLOCK];
+static SAMPLES_BUFFER_T NewSamplesBuffer;
+static SAMPLES_BUFFER_T OldSamplesBuffer;
+
 
 static INT16U bufferIndex;
 static INT8U ProcessFlag;
@@ -36,7 +35,7 @@ static INT16S AccelAbsResultsX[SAMPLES_PER_BLOCK];
 static INT16S AccelAbsResultsY[SAMPLES_PER_BLOCK];
 static INT16S AccelAbsResultsZ[SAMPLES_PER_BLOCK];
 
-typedef enum {CALCULATE_SCORE, BIO_TRANSFER, END} PROCESS_STEP_T;
+typedef enum {STORE_SAMPLES, CALCULATE_SCORE, BIO_TRANSFER, END} PROCESS_STEP_T;
 
 /*****************************************************************************************
 * main()
@@ -55,9 +54,9 @@ void main(void) {
     Identified = 0;
     INT16U currentScore = 0;
     INT32U timingCounter = 0;
-    PROCESS_STEP_T ProcessStep = CALCULATE_SCORE;
+    PROCESS_STEP_T ProcessStep = STORE_SAMPLES;
 
-    while (1) {
+    while (1) { // Event loop
         timingCounter =  0;
         while((PIT->CHANNEL[0].TFLG & (PIT_TFLG_TIF_MASK)) == 0) {
             timingCounter++;
@@ -74,6 +73,11 @@ void main(void) {
 
         if (ProcessFlag == 1) { // Enter state decomposition
             switch(ProcessStep) {
+                case STORE_SAMPLES:
+                    OldSamplesBuffer = NewSamplesBuffer;
+                    ProcessStep = CALCULATE_SCORE;
+                    break;
+
                 case CALCULATE_SCORE:
                     currentScore = CalculateScore();
                     ProcessStep = BIO_TRANSFER;
@@ -86,17 +90,21 @@ void main(void) {
                     break;
                 case END:
                     ProcessFlag = 0;
-                    ProcessStep = CALCULATE_SCORE;
+                    ProcessStep = STORE_SAMPLES; // Back to start for next round of processing
                     break;
             }
         }
     }
 }
 
+/****************************************************************************************
+* FillAccelBuffers -    Transfers current acceleration sample to the buffers
+*                       of x, y, z samples of current 1 second interval
+****************************************************************************************/
 void FillAccelBuffers() {
-    AccelSamplesX[bufferIndex] = AccelData3D.x - (INT16S)70;
-    AccelSamplesY[bufferIndex] = AccelData3D.y + (INT16S)200;
-    AccelSamplesZ[bufferIndex] = AccelData3D.z - (INT16S)2112;
+    NewSamplesBuffer.AccelX[bufferIndex] = AccelData3D.x - (INT16S)70;
+    NewSamplesBuffer.AccelY[bufferIndex] = AccelData3D.y + (INT16S)200;
+    NewSamplesBuffer.AccelZ[bufferIndex] = AccelData3D.z - (INT16S)2112;
     bufferIndex++;
     if (bufferIndex == SAMPLES_PER_BLOCK) {
         ProcessFlag = 1;
@@ -104,10 +112,17 @@ void FillAccelBuffers() {
     }
 }
 
+/****************************************************************************************
+* CalculateScore -  Calculates a simple "movement" score,
+*                   more acceleration movement yields a higher score
+****************************************************************************************/
 INT16U CalculateScore() {
-    arm_abs_q15(AccelSamplesX, AccelAbsResultsX, SAMPLES_PER_BLOCK); // Absolute values of x, y, z vectors for a simple movement summation score
-    arm_abs_q15(AccelSamplesY, AccelAbsResultsY, SAMPLES_PER_BLOCK);
-    arm_abs_q15(AccelSamplesZ, AccelAbsResultsZ, SAMPLES_PER_BLOCK);
+    /* Since the score is a sum of acceleration values for the last second,
+       we must use only positive values. */
+    arm_abs_q15(OldSamplesBuffer.AccelX, AccelAbsResultsX, SAMPLES_PER_BLOCK);
+    arm_abs_q15(OldSamplesBuffer.AccelY, AccelAbsResultsY, SAMPLES_PER_BLOCK);
+    arm_abs_q15(OldSamplesBuffer.AccelZ, AccelAbsResultsZ, SAMPLES_PER_BLOCK);
+
     INT32U score = 0;
     for (INT16U i = 0; i < SAMPLES_PER_BLOCK; i++) {
         score += (INT32U)AccelAbsResultsX[i];
@@ -123,22 +138,15 @@ INT16U CalculateScore() {
 //
 //}
 
+/****************************************************************************************
+* PITInit - Configure PIT to trigger every 1.25mS, the sample period of the accelerometer
+****************************************************************************************/
 void PITInit() {
     SIM->SCGC6 |= SIM_SCGC6_PIT(1);  // Enable PIT module
     PIT->MCR = PIT_MCR_MDIS(0);     // Enable clock for standard PIT timers
     PIT->CHANNEL[0].LDVAL = LDVAL_800HZ;
     PIT->CHANNEL[0].TCTRL = PIT_TCTRL_TEN(1); // Enable interrupts and PIT Timer
 }
-
-///****************************************************************************************
-//* PIT0_IRQHandler() - Initiate next I2C read, runs on 1.25ms interval.
-//****************************************************************************************/
-//void PIT0_IRQHandler() {
-//
-//    PIT->CHANNEL[0].TFLG = PIT_TFLG_TIF(1); // Clear interrupt flag
-//    PITFlag++;
-//
-//}
 
 
 /********************************************************************************/
