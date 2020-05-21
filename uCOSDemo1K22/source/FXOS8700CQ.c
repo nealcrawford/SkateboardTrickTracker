@@ -39,7 +39,7 @@ void AccelInit(void){
     PORTB->PCR[2] = PORT_PCR_MUX(2)|PORT_PCR_ODE(1);  /* Configure GPIO for I2C0         */
     PORTB->PCR[3] = PORT_PCR_MUX(2)|PORT_PCR_ODE(1);  /* and open drain                  */
 
-    I2C0->F  = 0x27;                /* Set SCL to 104kHz               */
+    I2C0->F  = 0x1B;                /* Set SCL to 390.625KHz              */
     I2C0->C1 |= I2C_C1_IICEN(1);    /* Enable I2C0 and interrupts    */
     I2C0->S |= I2C_S_IICIF(1);                 /* Clear IICIF flag                    */
 

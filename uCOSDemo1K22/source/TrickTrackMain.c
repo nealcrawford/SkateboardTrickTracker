@@ -29,6 +29,7 @@ static INT16S AccelSamplesZ[SAMPLES_PER_BLOCK];
 
 static INT16U bufferIndex;
 static INT8U IdentifyFlag;
+static INT8U Identified;
 
 static INT16S AccelResultsX[SAMPLES_PER_BLOCK];
 static INT16S AccelResultsY[SAMPLES_PER_BLOCK];
@@ -42,11 +43,12 @@ void main(void) {
     K22FRDM_BootClock();
     GpioLEDMulticolorInit();
     GpioDBugBitsInit();
-    PITInit();
     //BluetoothInit();
     AccelInit();
+    PITInit();
     bufferIndex = 0;
     IdentifyFlag = 0;
+    Identified = 0;
     INT16U currentScore = 0;
     INT32U timingCounter = 0;
 
@@ -55,10 +57,13 @@ void main(void) {
         while((PIT->CHANNEL[0].TFLG & (PIT_TFLG_TIF_MASK)) == 0) {
             timingCounter++;
         }
+        if (Identified == 1) { // Debugging purposes
+            Identified = 0;
+        }
+        PIT->CHANNEL[0].TFLG = PIT_TFLG_TIF(1);
         if (timingCounter == 0) {
             while(1) {} // If in this trap, we failed timing
         }
-        PIT->CHANNEL[0].TFLG = PIT_TFLG_TIF(1);
         AccelSampleTask(&AccelData3D);
         FillAccelBuffers();
         if (IdentifyFlag == 1) {
@@ -81,10 +86,15 @@ void FillAccelBuffers() {
 INT16U TrickIdentify() {
     IdentifyFlag = 0;
     arm_abs_q15(AccelSamplesX, AccelResultsX, SAMPLES_PER_BLOCK);
+    arm_abs_q15(AccelSamplesY, AccelResultsY, SAMPLES_PER_BLOCK);
+    arm_abs_q15(AccelSamplesZ, AccelResultsZ, SAMPLES_PER_BLOCK);
     INT32U score = 0;
     for (INT16U i = 0; i < SAMPLES_PER_BLOCK; i++) {
-        score += AccelResultsX[i];
+        score += (INT32U)AccelResultsX[i];
+        score += (INT32U)AccelResultsY[i];
+        score += (INT32U)AccelResultsZ[i];
     }
+    Identified = 1;
     return (INT16U)(score/4000);
 }
 
