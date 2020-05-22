@@ -68,7 +68,7 @@ void main(void) {
         AccelSampleTask(&AccelData3D);
         FillAccelBuffers();
 
-        if (ProcessFlag == 1) { // Enter state decomposition
+        if (ProcessFlag == 1) { // Enter processing state decomposition
             switch(ProcessStep) {
                 case START:
                     ProcessStep = CALCULATE_SCORE;
@@ -99,9 +99,9 @@ void main(void) {
 *                       of x, y, z samples of current 1 second interval
 ****************************************************************************************/
 void FillAccelBuffers() {
-    AccelSamplesX[current_samples][bufferIndex] = AccelData3D.x - (INT16S)70;
-    AccelSamplesY[current_samples][bufferIndex] = AccelData3D.y + (INT16S)200;
-    AccelSamplesZ[current_samples][bufferIndex] = AccelData3D.z - (INT16S)2112;
+    AccelSamplesX[current_samples][bufferIndex] = AccelData3D.x;
+    AccelSamplesY[current_samples][bufferIndex] = AccelData3D.y;
+    AccelSamplesZ[current_samples][bufferIndex] = AccelData3D.z;
     bufferIndex++;
     if (bufferIndex == SAMPLES_PER_BLOCK) {
         ProcessFlag = 1;
