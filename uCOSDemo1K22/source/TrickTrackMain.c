@@ -16,26 +16,23 @@ static void FillAccelBuffers(void);
 
 #define SAMPLES_PER_BLOCK 800
 
-typedef struct {
-    INT16S AccelX[SAMPLES_PER_BLOCK];
-    INT16S AccelY[SAMPLES_PER_BLOCK];
-    INT16S AccelZ[SAMPLES_PER_BLOCK];
-} SAMPLES_BUFFER_T;
+static INT16S AccelSamplesX[2][SAMPLES_PER_BLOCK];
+static INT16S AccelSamplesY[2][SAMPLES_PER_BLOCK];
+static INT16S AccelSamplesZ[2][SAMPLES_PER_BLOCK];
 
 static ACCEL_DATA_3D AccelData3D;
-static SAMPLES_BUFFER_T NewSamplesBuffer;
-static SAMPLES_BUFFER_T OldSamplesBuffer;
-
 
 static INT16U bufferIndex;
 static INT8U ProcessFlag;
 static INT8U Identified;
+INT8U current_samples = 0U;
+INT8U prev_samples = 1U;
 
 static INT16S AccelAbsResultsX[SAMPLES_PER_BLOCK];
 static INT16S AccelAbsResultsY[SAMPLES_PER_BLOCK];
 static INT16S AccelAbsResultsZ[SAMPLES_PER_BLOCK];
 
-typedef enum {STORE_SAMPLES, CALCULATE_SCORE, BIO_TRANSFER, END} PROCESS_STEP_T;
+typedef enum {START, CALCULATE_SCORE, BIO_TRANSFER, END} PROCESS_STEP_T;
 
 /*****************************************************************************************
 * main()
@@ -54,7 +51,7 @@ void main(void) {
     Identified = 0;
     INT16U currentScore = 0;
     INT32U timingCounter = 0;
-    PROCESS_STEP_T ProcessStep = STORE_SAMPLES;
+    PROCESS_STEP_T ProcessStep = START;
 
     while (1) { // Event loop
         timingCounter =  0;
@@ -73,8 +70,7 @@ void main(void) {
 
         if (ProcessFlag == 1) { // Enter state decomposition
             switch(ProcessStep) {
-                case STORE_SAMPLES:
-                    OldSamplesBuffer = NewSamplesBuffer;
+                case START:
                     ProcessStep = CALCULATE_SCORE;
                     break;
 
@@ -88,9 +84,10 @@ void main(void) {
                     BIOOutCRLF();
                     ProcessStep = END;
                     break;
+
                 case END:
                     ProcessFlag = 0;
-                    ProcessStep = STORE_SAMPLES; // Back to start for next round of processing
+                    ProcessStep = START; // Back to start for next round of processing
                     break;
             }
         }
@@ -102,12 +99,14 @@ void main(void) {
 *                       of x, y, z samples of current 1 second interval
 ****************************************************************************************/
 void FillAccelBuffers() {
-    NewSamplesBuffer.AccelX[bufferIndex] = AccelData3D.x - (INT16S)70;
-    NewSamplesBuffer.AccelY[bufferIndex] = AccelData3D.y + (INT16S)200;
-    NewSamplesBuffer.AccelZ[bufferIndex] = AccelData3D.z - (INT16S)2112;
+    AccelSamplesX[current_samples][bufferIndex] = AccelData3D.x - (INT16S)70;
+    AccelSamplesY[current_samples][bufferIndex] = AccelData3D.y + (INT16S)200;
+    AccelSamplesZ[current_samples][bufferIndex] = AccelData3D.z - (INT16S)2112;
     bufferIndex++;
     if (bufferIndex == SAMPLES_PER_BLOCK) {
         ProcessFlag = 1;
+        current_samples ^= 1; // Flip to next side of ping pong buffer
+        prev_samples ^= 1;
         bufferIndex = 0;
     }
 }
@@ -119,9 +118,9 @@ void FillAccelBuffers() {
 INT16U CalculateScore() {
     /* Since the score is a sum of acceleration values for the last second,
        we must use only positive values. */
-    arm_abs_q15(OldSamplesBuffer.AccelX, AccelAbsResultsX, SAMPLES_PER_BLOCK);
-    arm_abs_q15(OldSamplesBuffer.AccelY, AccelAbsResultsY, SAMPLES_PER_BLOCK);
-    arm_abs_q15(OldSamplesBuffer.AccelZ, AccelAbsResultsZ, SAMPLES_PER_BLOCK);
+    arm_abs_q15(AccelSamplesX[prev_samples], AccelAbsResultsX, SAMPLES_PER_BLOCK);
+    arm_abs_q15(AccelSamplesY[prev_samples], AccelAbsResultsY, SAMPLES_PER_BLOCK);
+    arm_abs_q15(AccelSamplesZ[prev_samples], AccelAbsResultsZ, SAMPLES_PER_BLOCK);
 
     INT32U score = 0;
     for (INT16U i = 0; i < SAMPLES_PER_BLOCK; i++) {
