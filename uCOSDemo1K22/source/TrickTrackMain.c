@@ -13,20 +13,21 @@
 void PITInit(void);
 static INT16U CalculateScore(void);
 static void FillAccelBuffers(void);
+INT8U AccelTriggered(void);
 
 #define SAMPLES_PER_BLOCK 800
 
-static INT16S AccelSamplesX[2][SAMPLES_PER_BLOCK];
-static INT16S AccelSamplesY[2][SAMPLES_PER_BLOCK];
-static INT16S AccelSamplesZ[2][SAMPLES_PER_BLOCK];
+static INT16S AccelSamplesX[SAMPLES_PER_BLOCK];
+static INT16S AccelSamplesY[SAMPLES_PER_BLOCK];
+static INT16S AccelSamplesZ[SAMPLES_PER_BLOCK];
 
 static ACCEL_DATA_3D AccelData3D;
 
 static INT16U bufferIndex;
 static INT8U ProcessFlag;
 static INT8U Identified;
-INT8U current_samples = 0U;
-INT8U prev_samples = 1U;
+
+static INT8U RecordAccel;
 
 static INT16S AccelAbsResultsX[SAMPLES_PER_BLOCK];
 static INT16S AccelAbsResultsY[SAMPLES_PER_BLOCK];
@@ -51,24 +52,12 @@ void main(void) {
     Identified = 0;
     INT16U currentScore = 0;
     INT32U timingCounter = 0;
+    RecordAccel = 0;
     PROCESS_STEP_T ProcessStep = START;
 
     while (1) { // Event loop
-        timingCounter =  0;
-        while((PIT->CHANNEL[0].TFLG & (PIT_TFLG_TIF_MASK)) == 0) {
-            timingCounter++;
-        }
-        if (Identified == 1) { // Debugging purposes
-            Identified = 0;
-        }
-        PIT->CHANNEL[0].TFLG = PIT_TFLG_TIF(1);
-        if (timingCounter == 0) {
-            while(1) {} // If in this trap, we failed timing
-        }
-        AccelSampleTask(&AccelData3D);
-        FillAccelBuffers();
 
-        if (ProcessFlag == 1) { // Enter processing state decomposition
+        if (ProcessFlag == 1) { // Begin processing movement data, pause sampling new data until this is finished
             switch(ProcessStep) {
                 case START:
                     ProcessStep = CALCULATE_SCORE;
@@ -87,11 +76,48 @@ void main(void) {
 
                 case END:
                     ProcessFlag = 0;
+                    PIT->CHANNEL[0].TCTRL = PIT_TCTRL_TEN(1); // Re-enable PIT Timer
+                    PIT->CHANNEL[0].TFLG = PIT_TFLG_TIF(1);
                     ProcessStep = START; // Back to start for next round of processing
                     break;
             }
+
+        } else { // If not processing a trick, monitor for significant movement and record it
+            timingCounter =  0;
+            while((PIT->CHANNEL[0].TFLG & (PIT_TFLG_TIF_MASK)) == 0) { // Wait for PIT to fire
+                timingCounter++;
+            }
+
+            if (Identified == 1) { // Debugging purposes
+                Identified = 0;
+            }
+
+            PIT->CHANNEL[0].TFLG = PIT_TFLG_TIF(1);
+            if (timingCounter == 0) {
+                while(1) {} // If in this trap, we failed timing
+            }
+            AccelSampleTask(&AccelData3D);
+
+            if (AccelTriggered() && !RecordAccel) { // If significant movement is detected, begin recording the next second of movement
+                RecordAccel = 1;
+                LEDRED_TURN_ON();
+            }
+
+            if (RecordAccel == 1) {
+                FillAccelBuffers();
+            }
         }
     }
+}
+
+INT8U AccelTriggered() {
+    INT8U triggerStatus = 0;
+    if ((AccelData3D.x > 2000 || AccelData3D.x < -2000) || (AccelData3D.y > 2000 || AccelData3D.y < -2000) || (AccelData3D.z > 3000 || AccelData3D.z < -3000)) {
+        triggerStatus = 1;
+    } else {
+        triggerStatus = 0;
+    }
+    return triggerStatus;
 }
 
 /****************************************************************************************
@@ -99,14 +125,15 @@ void main(void) {
 *                       of x, y, z samples of current 1 second interval
 ****************************************************************************************/
 void FillAccelBuffers() {
-    AccelSamplesX[current_samples][bufferIndex] = AccelData3D.x;
-    AccelSamplesY[current_samples][bufferIndex] = AccelData3D.y;
-    AccelSamplesZ[current_samples][bufferIndex] = AccelData3D.z;
+    AccelSamplesX[bufferIndex] = AccelData3D.x;
+    AccelSamplesY[bufferIndex] = AccelData3D.y;
+    AccelSamplesZ[bufferIndex] = AccelData3D.z;
     bufferIndex++;
     if (bufferIndex == SAMPLES_PER_BLOCK) {
+        LEDRED_TURN_OFF();
+        PIT->CHANNEL[0].TCTRL &= ~PIT_TCTRL_TEN_MASK; // Disable PIT Timer
         ProcessFlag = 1;
-        current_samples ^= 1; // Flip to next side of ping pong buffer
-        prev_samples ^= 1;
+        RecordAccel = 0;
         bufferIndex = 0;
     }
 }
@@ -118,9 +145,9 @@ void FillAccelBuffers() {
 INT16U CalculateScore() {
     /* Since the score is a sum of acceleration values for the last second,
        we must use only positive values. */
-    arm_abs_q15(AccelSamplesX[prev_samples], AccelAbsResultsX, SAMPLES_PER_BLOCK);
-    arm_abs_q15(AccelSamplesY[prev_samples], AccelAbsResultsY, SAMPLES_PER_BLOCK);
-    arm_abs_q15(AccelSamplesZ[prev_samples], AccelAbsResultsZ, SAMPLES_PER_BLOCK);
+    arm_abs_q15(AccelSamplesX, AccelAbsResultsX, SAMPLES_PER_BLOCK);
+    arm_abs_q15(AccelSamplesY, AccelAbsResultsY, SAMPLES_PER_BLOCK);
+    arm_abs_q15(AccelSamplesZ, AccelAbsResultsZ, SAMPLES_PER_BLOCK);
 
     INT32U score = 0;
     for (INT16U i = 0; i < SAMPLES_PER_BLOCK; i++) {
@@ -144,7 +171,7 @@ void PITInit() {
     SIM->SCGC6 |= SIM_SCGC6_PIT(1);  // Enable PIT module
     PIT->MCR = PIT_MCR_MDIS(0);     // Enable clock for standard PIT timers
     PIT->CHANNEL[0].LDVAL = LDVAL_800HZ;
-    PIT->CHANNEL[0].TCTRL = PIT_TCTRL_TEN(1); // Enable interrupts and PIT Timer
+    PIT->CHANNEL[0].TCTRL = PIT_TCTRL_TEN(1); // Enable PIT Timer
 }
 
 
