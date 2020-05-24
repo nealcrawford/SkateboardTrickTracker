@@ -4,10 +4,32 @@
 * Todd Morton, 11/25/2015 Modified for new Debug bits. See EE344, Lab5, 2015
 * Team K22, 2/1/2016 Modified to work with K22
 * Todd Morton, 12/13/2018 Modified for MCUXpresso header
+* Neal Crawford, 5/23/2020 Modified to read SW2 and SW3 of K22
  ****************************************************************************************/
 #include "MCUType.h"
 #include "K22FRDM_GPIO.h"
 
+void GpioSwitchInit(void){
+    SIM->SCGC5 |= SIM_SCGC5_PORTB_MASK; // Enable clock gate for PORTB
+    SIM->SCGC5 |= SIM_SCGC5_PORTC_MASK; // Enable clock gate for PORTC
+    PORTB->PCR[17] |= PORT_PCR_MUX(1);  // Mux to GPIO for SW3
+    PORTC->PCR[1] |= PORT_PCR_MUX(1);   // Mux to GPIO for SW2
+}
+
+INT8U GpioSWInput(void) {
+    INT8U activeSwitch = 0;
+    while (SW2_READ() && SW3_READ()) {} // While either switch off
+    if (!SW2_READ()) {
+        activeSwitch = 2;
+    } else if (!SW3_READ()) {
+        activeSwitch = 3;
+    }
+    return activeSwitch;
+}
+
+INT8U GpioSW3Read(void) { // Non-blocking read
+    return !((GPIOB->PDIR & GPIO_PIN(SW3)) >> SW3);
+}
 
 void GpioLEDMulticolorInit(void){
     SIM->SCGC5 |= SIM_SCGC5_PORTA_MASK;  //Enable clock gate for PORTA

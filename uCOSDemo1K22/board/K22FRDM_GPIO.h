@@ -5,6 +5,7 @@
 * Alex Gorman, Riley Murry, Jacob Rosenblum, Theodor Fernau, 2/12/2016, changed the debug
 * bits and added LED control to be suitable for the K22.
 * Todd Morton, 12/13/2018 Modified for MCUXpresso header
+* Neal Crawford, 5/23/2020 Modified to read SW3 of K22
 ****************************************************************************************/
 
 #ifndef GPIO_H_
@@ -16,6 +17,9 @@
 
 
 void GpioLEDMulticolorInit(void);
+void GpioSwitchInit(void);
+INT8U GpioSW3Read(void);
+INT8U GpioSWInput(void);
 
 #if DEBUGLEVEL > 1
 void GpioDBugBitsInit(void);
@@ -32,9 +36,13 @@ void GpioDBugBitsInit(void);
 #define LED_GREEN 2U
 #define LED_BLUE 5U
 
+#define SW2  1U
+#define SW3 17U
 
 
 
+#define SW2_READ()  ((GPIOC->PDIR & GPIO_PIN(SW2)) >> SW2)
+#define SW3_READ()  ((GPIOB->PDIR & GPIO_PIN(SW3)) >> SW3)
 
 #define LEDRED_TURN_OFF()  (GPIOA->PSOR = GPIO_PIN(LED_RED))
 #define LEDRED_TURN_ON() (GPIOA->PCOR = GPIO_PIN(LED_RED))

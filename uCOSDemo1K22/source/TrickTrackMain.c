@@ -11,11 +11,12 @@
 #define LDVAL_800HZ 62499   // (50MHz / 800 Hz) - 1
 
 void PITInit(void);
+void PITPend(void);
 static INT16U CalculateScore(void);
 static void FillAccelBuffers(void);
 INT8U AccelTriggered(void);
 
-#define SAMPLES_PER_BLOCK 800
+#define SAMPLES_PER_BLOCK 1600 // Two seconds of acceleration data
 
 static INT16S AccelSamplesX[SAMPLES_PER_BLOCK];
 static INT16S AccelSamplesY[SAMPLES_PER_BLOCK];
@@ -25,15 +26,12 @@ static ACCEL_DATA_3D AccelData3D;
 
 static INT16U bufferIndex;
 static INT8U ProcessFlag;
-static INT8U Identified;
 
 static INT8U RecordAccel;
 
 static INT16S AccelAbsResultsX[SAMPLES_PER_BLOCK];
 static INT16S AccelAbsResultsY[SAMPLES_PER_BLOCK];
 static INT16S AccelAbsResultsZ[SAMPLES_PER_BLOCK];
-
-typedef enum {START, CALCULATE_SCORE, BIO_TRANSFER, END} PROCESS_STEP_T;
 
 /*****************************************************************************************
 * main()
@@ -42,64 +40,75 @@ void main(void) {
 
     K22FRDM_BootClock();
     GpioLEDMulticolorInit();
-    GpioDBugBitsInit();
+    //GpioDBugBitsInit();
+    GpioSwitchInit();
     BIOOpen(BIO_BIT_RATE_115200);
     //BluetoothInit();
     AccelInit();
     PITInit();
     bufferIndex = 0;
     ProcessFlag = 0;
-    Identified = 0;
     INT16U currentScore = 0;
-    INT32U timingCounter = 0;
     RecordAccel = 0;
-    PROCESS_STEP_T ProcessStep = START;
+    INT8U RECORD = 0;
 
     while (1) { // Event loop
-
-        if (ProcessFlag == 1) { // Begin processing movement data, pause sampling new data until this is finished
-            switch(ProcessStep) {
-                case START:
-                    ProcessStep = CALCULATE_SCORE;
-                    break;
-
-                case CALCULATE_SCORE:
-                    currentScore = CalculateScore();
-                    ProcessStep = BIO_TRANSFER;
-                    break;
-
-                case BIO_TRANSFER:
-                    BIOOutDecWord(currentScore, 1);
+        if (GpioSW3Read()) {
+            RECORD = 1;
+            LEDBLUE_TURN_ON();
+        }
+        if (ProcessFlag == 1) { // Begin processing of accel. data, pause sampling new data until this is finished
+            if (RECORD == 1) {
+                LEDGREEN_TURN_ON(); // Indicate recording is finished
+                if(GpioSWInput() == 3) { // Check that user approves trick recording
+                    /* Transfer the entirety of each buffer over BIOOut, speed does not matter, as this is the recording of a single NEW trick */
+                    BIOPutStrg("AccelSamplesX=");
                     BIOOutCRLF();
-                    ProcessStep = END;
-                    break;
+                    for (INT16U i = 0; i < SAMPLES_PER_BLOCK; i++) {
+                        BIOPutStrg(" 0x");
+                        BIOOutHexHWord(AccelSamplesX[i]);
+                        BIOWrite(',');
+                    }
 
-                case END:
-                    ProcessFlag = 0;
-                    PIT->CHANNEL[0].TCTRL = PIT_TCTRL_TEN(1); // Re-enable PIT Timer
-                    PIT->CHANNEL[0].TFLG = PIT_TFLG_TIF(1);
-                    ProcessStep = START; // Back to start for next round of processing
-                    break;
+                    BIOOutCRLF();
+                    BIOOutCRLF();
+                    BIOPutStrg("AccelSamplesY=");
+                    BIOOutCRLF();
+                    for (INT16U i = 0; i < SAMPLES_PER_BLOCK; i++) {
+                        BIOPutStrg(" 0x");
+                        BIOOutHexHWord(AccelSamplesY[i]);
+                        BIOWrite(',');
+                    }
+
+                    BIOOutCRLF();
+                    BIOOutCRLF();
+                    BIOPutStrg("AccelSamplesZ=");
+                    BIOOutCRLF();
+                    for (INT16U i = 0; i < SAMPLES_PER_BLOCK; i++) {
+                        BIOPutStrg(" 0x");
+                        BIOOutHexHWord(AccelSamplesZ[i]);
+                        BIOWrite(',');
+                    }
+                    BIOOutCRLF();
+                    BIOOutCRLF();
+                } else {} // User rejected recording, do nothing
+                LEDGREEN_TURN_OFF();
+            } else { // Not recording new trick, process last accel. data
+                currentScore = CalculateScore();
+                BIOOutDecWord(currentScore, 1);
+                BIOOutCRLF();
             }
-
-        } else { // If not processing a trick, monitor for significant movement and record it
-            timingCounter =  0;
-            while((PIT->CHANNEL[0].TFLG & (PIT_TFLG_TIF_MASK)) == 0) { // Wait for PIT to fire
-                timingCounter++;
-            }
-
-            if (Identified == 1) { // Debugging purposes
-                Identified = 0;
-            }
-
+            ProcessFlag = 0;
+            RECORD = 0;
+            PIT->CHANNEL[0].TCTRL = PIT_TCTRL_TEN(1); // Re-enable PIT Timer
             PIT->CHANNEL[0].TFLG = PIT_TFLG_TIF(1);
-            if (timingCounter == 0) {
-                while(1) {} // If in this trap, we failed timing
-            }
+        } else { // If not processing a trick, monitor for significant movement and record it
+            PITPend();
             AccelSampleTask(&AccelData3D);
 
             if (AccelTriggered() && !RecordAccel) { // If significant movement is detected, begin recording the next second of movement
                 RecordAccel = 1;
+                LEDBLUE_TURN_OFF();
                 LEDRED_TURN_ON();
             }
 
@@ -112,7 +121,7 @@ void main(void) {
 
 INT8U AccelTriggered() {
     INT8U triggerStatus = 0;
-    if ((AccelData3D.x > 2000 || AccelData3D.x < -2000) || (AccelData3D.y > 2000 || AccelData3D.y < -2000) || (AccelData3D.z > 3000 || AccelData3D.z < -3000)) {
+    if ((AccelData3D.x > 4000 || AccelData3D.x < -4000) || (AccelData3D.y > 4000 || AccelData3D.y < -4000) || (AccelData3D.z > 4000 || AccelData3D.z < -4000)) {
         triggerStatus = 1;
     } else {
         triggerStatus = 0;
@@ -122,7 +131,7 @@ INT8U AccelTriggered() {
 
 /****************************************************************************************
 * FillAccelBuffers -    Transfers current acceleration sample to the buffers
-*                       of x, y, z samples of current 1 second interval
+*                       of x, y, z samples of current 1 second interval.
 ****************************************************************************************/
 void FillAccelBuffers() {
     AccelSamplesX[bufferIndex] = AccelData3D.x;
@@ -155,8 +164,19 @@ INT16U CalculateScore() {
         score += (INT32U)AccelAbsResultsY[i];
         score += (INT32U)AccelAbsResultsZ[i];
     }
-    Identified = 1;
-    return (INT16U)(score/4000);
+    return (INT16U)(score/8000);
+}
+
+void PITPend() {
+    INT32U timingCounter =  0;
+    while((PIT->CHANNEL[0].TFLG & (PIT_TFLG_TIF_MASK)) == 0) { // Wait for PIT to fire
+        timingCounter++;
+    }
+
+    PIT->CHANNEL[0].TFLG = PIT_TFLG_TIF(1);
+    if (timingCounter == 0) {
+        while(1) {} // If in this trap, we failed timing
+    }
 }
 
 
