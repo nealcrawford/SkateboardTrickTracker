@@ -7,6 +7,7 @@
 #include "K22FRDM_GPIO.h"
 #include "FXOS8700CQ.h"
 #include "BasicIO.h"
+#include "TrickDB.h"
 
 #define LDVAL_800HZ 62499   // (50MHz / 800 Hz) - 1
 
@@ -16,6 +17,7 @@ static INT16U CalculateScore(void);
 static void FillAccelBuffers(void);
 INT8U AccelTriggered(void);
 void PrintAccelBuffers(void);
+void TrickIdentify(void);
 
 #define SAMPLES_PER_BLOCK 1600 // Two seconds of acceleration data
 
@@ -29,6 +31,15 @@ static INT16U bufferIndex;
 static INT8U ProcessFlag;
 
 static INT8U RecordAccel;
+
+INT16S max_x_val;
+INT32U max_x_index;
+
+INT16S max_y_val;
+INT32U max_y_index;
+
+INT16S max_z_val;
+INT32U max_z_index;
 
 static INT16S AccelAbsResultsX[SAMPLES_PER_BLOCK];
 static INT16S AccelAbsResultsY[SAMPLES_PER_BLOCK];
@@ -67,6 +78,7 @@ void main(void) {
                 LEDGREEN_TURN_OFF();
             }
             else { // Not recording new trick, process last accel. data
+                TrickIdentify();
                 currentScore = CalculateScore();
                 BIOOutDecWord(currentScore, 1);
                 BIOOutCRLF();
@@ -189,10 +201,18 @@ void PITPend() {
     }
 }
 
+void TrickIdentify() {
+    INT16S corrx[(SAMPLES_PER_BLOCK*2) - 1];
+    INT16S corry[(SAMPLES_PER_BLOCK*2) - 1];
+    INT16S corrz[(SAMPLES_PER_BLOCK*2) - 1];
 
-//void TrickIdentify() {
-//
-//}
+    arm_correlate_fast_q15(AccelSamplesX, SAMPLES_PER_BLOCK, BACK_N_FORTH_X, SAMPLES_PER_BLOCK, corrx);
+    arm_max_q15(corrx, (SAMPLES_PER_BLOCK*2) - 1, &max_x_val, &max_x_index);
+    arm_correlate_fast_q15(AccelSamplesY, SAMPLES_PER_BLOCK, BACK_N_FORTH_Y, SAMPLES_PER_BLOCK, corry);
+    arm_max_q15(corry, (SAMPLES_PER_BLOCK*2) - 1, &max_y_val, &max_y_index);
+    arm_correlate_fast_q15(AccelSamplesZ, SAMPLES_PER_BLOCK, BACK_N_FORTH_Z, SAMPLES_PER_BLOCK, corrz);
+    arm_max_q15(corrz, (SAMPLES_PER_BLOCK*2) - 1, &max_z_val, &max_z_index);
+}
 
 /****************************************************************************************
 * PITInit - Configure PIT to trigger every 1.25mS, the sample period of the accelerometer
