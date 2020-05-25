@@ -15,6 +15,7 @@ void PITPend(void);
 static INT16U CalculateScore(void);
 static void FillAccelBuffers(void);
 INT8U AccelTriggered(void);
+void PrintAccelBuffers(void);
 
 #define SAMPLES_PER_BLOCK 1600 // Two seconds of acceleration data
 
@@ -57,52 +58,26 @@ void main(void) {
             RECORD = 1;
             LEDBLUE_TURN_ON();
         }
-        if (ProcessFlag == 1) { // Begin processing of accel. data, pause sampling new data until this is finished
+        if (ProcessFlag == 1) { // Begin processing accel. data, pause sampling new data until this is finished
             if (RECORD == 1) {
-                LEDGREEN_TURN_ON(); // Indicate recording is finished
-                if(GpioSWInput() == 3) { // Check that user approves trick recording
-                    /* Transfer the entirety of each buffer over BIOOut, speed does not matter, as this is the recording of a single NEW trick */
-                    BIOPutStrg("AccelSamplesX=");
-                    BIOOutCRLF();
-                    for (INT16U i = 0; i < SAMPLES_PER_BLOCK; i++) {
-                        BIOPutStrg(" 0x");
-                        BIOOutHexHWord(AccelSamplesX[i]);
-                        BIOWrite(',');
-                    }
-
-                    BIOOutCRLF();
-                    BIOOutCRLF();
-                    BIOPutStrg("AccelSamplesY=");
-                    BIOOutCRLF();
-                    for (INT16U i = 0; i < SAMPLES_PER_BLOCK; i++) {
-                        BIOPutStrg(" 0x");
-                        BIOOutHexHWord(AccelSamplesY[i]);
-                        BIOWrite(',');
-                    }
-
-                    BIOOutCRLF();
-                    BIOOutCRLF();
-                    BIOPutStrg("AccelSamplesZ=");
-                    BIOOutCRLF();
-                    for (INT16U i = 0; i < SAMPLES_PER_BLOCK; i++) {
-                        BIOPutStrg(" 0x");
-                        BIOOutHexHWord(AccelSamplesZ[i]);
-                        BIOWrite(',');
-                    }
-                    BIOOutCRLF();
-                    BIOOutCRLF();
-                } else {} // User rejected recording, do nothing
+                LEDGREEN_TURN_ON();         // Indicate recording is finished
+                if(GpioSWInput() == 3) {    // Check that user approves trick recording
+                    PrintAccelBuffers();    // Print speed does not matter
+                } else {}       // User rejected recording, do nothing
                 LEDGREEN_TURN_OFF();
-            } else { // Not recording new trick, process last accel. data
+            }
+            else { // Not recording new trick, process last accel. data
                 currentScore = CalculateScore();
                 BIOOutDecWord(currentScore, 1);
                 BIOOutCRLF();
             }
+            /* Reset for regular sampling operation */
             ProcessFlag = 0;
             RECORD = 0;
             PIT->CHANNEL[0].TCTRL = PIT_TCTRL_TEN(1); // Re-enable PIT Timer
             PIT->CHANNEL[0].TFLG = PIT_TFLG_TIF(1);
-        } else { // If not processing a trick, monitor for significant movement and record it
+        }
+        else { // If not recording/processing, monitor for significant movement and record it
             PITPend();
             AccelSampleTask(&AccelData3D);
 
@@ -117,6 +92,41 @@ void main(void) {
             }
         }
     }
+}
+
+/****************************************************************************************
+* PrintAccelBuffers - Transfer the entirety of each buffer over BIOOut
+****************************************************************************************/
+void PrintAccelBuffers() {
+    BIOPutStrg("AccelSamplesX=");
+    BIOOutCRLF();
+    for (INT16U i = 0; i < SAMPLES_PER_BLOCK; i++) {
+        BIOPutStrg(" 0x");
+        BIOOutHexHWord(AccelSamplesX[i]);
+        BIOWrite(',');
+    }
+
+    BIOOutCRLF();
+    BIOOutCRLF();
+    BIOPutStrg("AccelSamplesY=");
+    BIOOutCRLF();
+    for (INT16U i = 0; i < SAMPLES_PER_BLOCK; i++) {
+        BIOPutStrg(" 0x");
+        BIOOutHexHWord(AccelSamplesY[i]);
+        BIOWrite(',');
+    }
+
+    BIOOutCRLF();
+    BIOOutCRLF();
+    BIOPutStrg("AccelSamplesZ=");
+    BIOOutCRLF();
+    for (INT16U i = 0; i < SAMPLES_PER_BLOCK; i++) {
+        BIOPutStrg(" 0x");
+        BIOOutHexHWord(AccelSamplesZ[i]);
+        BIOWrite(',');
+    }
+    BIOOutCRLF();
+    BIOOutCRLF();
 }
 
 INT8U AccelTriggered() {
