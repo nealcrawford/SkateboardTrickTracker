@@ -10,40 +10,20 @@
 #include "TrickDB.h"
 
 #define LDVAL_800HZ 62499   // (50MHz / 800 Hz) - 1
+#define Q_MAX 32767U
 
 void PITInit(void);
 void PITPend(void);
-static INT16U CalculateScore(void);
-static void FillAccelBuffers(void);
-INT8U AccelTriggered(void);
-void PrintAccelBuffers(void);
-void TrickIdentify(void);
+INT16U CalculateScore(ACCEL_BUFFERS* buffer);
+void FillAccelBuffers(ACCEL_DATA_3D* AccelData3D, ACCEL_BUFFERS* buffer, INT16U* bufferIndexPtr);
+INT8U AccelTriggered(ACCEL_DATA_3D* AccelData3D);
+void PrintAccelBuffers(ACCEL_BUFFERS* buffer);
+void TrickIdentify(ACCEL_BUFFERS* buffer, ACCEL_BUFFERS* backnforthbuffer, INT16S* corr_maxes);
+void NormalizeAccelData(ACCEL_BUFFERS* buffer);
+void AccelDataAbsoluteValues(ACCEL_BUFFERS* buffer);
 
-#define SAMPLES_PER_BLOCK 1600 // Two seconds of acceleration data
-
-static INT16S AccelSamplesX[SAMPLES_PER_BLOCK];
-static INT16S AccelSamplesY[SAMPLES_PER_BLOCK];
-static INT16S AccelSamplesZ[SAMPLES_PER_BLOCK];
-
-static ACCEL_DATA_3D AccelData3D;
-
-static INT16U bufferIndex;
 static INT8U ProcessFlag;
 
-static INT8U RecordAccel;
-
-INT16S max_x_val;
-INT32U max_x_index;
-
-INT16S max_y_val;
-INT32U max_y_index;
-
-INT16S max_z_val;
-INT32U max_z_index;
-
-static INT16S AccelAbsResultsX[SAMPLES_PER_BLOCK];
-static INT16S AccelAbsResultsY[SAMPLES_PER_BLOCK];
-static INT16S AccelAbsResultsZ[SAMPLES_PER_BLOCK];
 
 /*****************************************************************************************
 * main()
@@ -57,13 +37,29 @@ void main(void) {
     BIOOpen(BIO_BIT_RATE_115200);
     //BluetoothInit();
     AccelInit();
-    PITInit();
-    bufferIndex = 0;
+
     ProcessFlag = 0;
     INT16U currentScore = 0;
-    RecordAccel = 0;
+    INT16U bufferIndex = 0;
+    INT8U RecordAccel = 0;
     INT8U RECORD = 0;
+    ACCEL_DATA_3D CurrAccelSample;
+    ACCEL_BUFFERS SampleData;
+    ACCEL_BUFFERS BackNForthData;
 
+    INT32S CorrelationMaxes[3];
+
+    //Initialize trick database buffer
+    for (INT16U i = 0; i < SAMPLES_PER_BLOCK; i++) {
+        BackNForthData.samplesX[i] = BACK_N_FORTH_X[i];
+        BackNForthData.samplesY[i] = BACK_N_FORTH_Y[i];
+        BackNForthData.samplesZ[i] = BACK_N_FORTH_Z[i];
+    }
+    AccelDataAbsoluteValues(&BackNForthData);
+    NormalizeAccelData(&BackNForthData);
+    //PrintAccelBuffers(&BackNForthData);
+
+    PITInit();
     while (1) { // Event loop
         if (GpioSW3Read()) {
             RECORD = 1;
@@ -73,48 +69,85 @@ void main(void) {
             if (RECORD == 1) {
                 LEDGREEN_TURN_ON();         // Indicate recording is finished
                 if(GpioSWInput() == 3) {    // Check that user approves trick recording
-                    PrintAccelBuffers();    // Print speed does not matter
+                    PrintAccelBuffers(&SampleData);    // Print speed does not matter
                 } else {}       // User rejected recording, do nothing
                 LEDGREEN_TURN_OFF();
             }
             else { // Not recording new trick, process last accel. data
-                TrickIdentify();
-                currentScore = CalculateScore();
+                AccelDataAbsoluteValues(&SampleData);
+                currentScore = CalculateScore(&SampleData);
+                NormalizeAccelData(&SampleData);
+                TrickIdentify(&SampleData, &BackNForthData, CorrelationMaxes);
                 BIOOutDecWord(currentScore, 1);
                 BIOOutCRLF();
             }
             /* Reset for regular sampling operation */
             ProcessFlag = 0;
             RECORD = 0;
+            RecordAccel = 0;
             PIT->CHANNEL[0].TCTRL = PIT_TCTRL_TEN(1); // Re-enable PIT Timer
             PIT->CHANNEL[0].TFLG = PIT_TFLG_TIF(1);
         }
         else { // If not recording/processing, monitor for significant movement and record it
             PITPend();
-            AccelSampleTask(&AccelData3D);
+            AccelSampleTask(&CurrAccelSample);
 
-            if (AccelTriggered() && !RecordAccel) { // If significant movement is detected, begin recording the next second of movement
+            if (AccelTriggered(&CurrAccelSample) && !RecordAccel) { // If significant movement is detected, begin recording the next second of movement
                 RecordAccel = 1;
                 LEDBLUE_TURN_OFF();
                 LEDRED_TURN_ON();
             }
 
             if (RecordAccel == 1) {
-                FillAccelBuffers();
+                FillAccelBuffers(&CurrAccelSample, &SampleData, &bufferIndex);
             }
         }
     }
 }
 
+static INT8U log2(INT16U x) {
+    INT8U ans = 0;
+    while( x>>=1 ) {
+        ans++;
+    }
+    return ans;
+}
+
+/****************************************************************************************
+* PrintAccelBuffers - Normalizes data to Q15. Absolute value arrays required for each dimension
+****************************************************************************************/
+void NormalizeAccelData(ACCEL_BUFFERS* buffer) {
+    INT16S max_x, max_y, max_z;
+    INT32U max_x_index, max_y_index, max_z_index;
+
+    // Find maximum value in each dimension to determine scale factor
+    arm_max_q15(buffer->absX, SAMPLES_PER_BLOCK, &max_x, &max_x_index);
+    arm_max_q15(buffer->absY, SAMPLES_PER_BLOCK, &max_y, &max_y_index);
+    arm_max_q15(buffer->absZ, SAMPLES_PER_BLOCK, &max_z, &max_z_index);
+
+    INT8U shift_x, shift_y, shift_z;
+    shift_x = log2((INT16U)(Q_MAX/max_x))+1;
+    shift_y = log2((INT16U)(Q_MAX/max_y))+1;
+    shift_z = log2((INT16U)(Q_MAX/max_z))+1;
+
+    INT16U x_frac = (INT16U)(((Q_MAX << 15)/(INT32U)max_x) >> shift_x); // AccelSamples[n] * x_frac << 2
+    INT16U y_frac = (INT16U)(((Q_MAX << 15)/(INT32U)max_y) >> shift_y);
+    INT16U z_frac = (INT16U)(((Q_MAX << 15)/(INT32U)max_z) >> shift_z);
+
+    arm_scale_q15(buffer->samplesX, x_frac, shift_x, buffer->samplesX, SAMPLES_PER_BLOCK);
+    arm_scale_q15(buffer->samplesY, y_frac, shift_y, buffer->samplesY, SAMPLES_PER_BLOCK);
+    arm_scale_q15(buffer->samplesZ, z_frac, shift_z, buffer->samplesZ, SAMPLES_PER_BLOCK);
+}
+
 /****************************************************************************************
 * PrintAccelBuffers - Transfer the entirety of each buffer over BIOOut
 ****************************************************************************************/
-void PrintAccelBuffers() {
+void PrintAccelBuffers(ACCEL_BUFFERS* buffer) {
     BIOPutStrg("AccelSamplesX=");
     BIOOutCRLF();
     for (INT16U i = 0; i < SAMPLES_PER_BLOCK; i++) {
         BIOPutStrg(" 0x");
-        BIOOutHexHWord(AccelSamplesX[i]);
+        BIOOutHexHWord(buffer->samplesX[i]);
         BIOWrite(',');
     }
 
@@ -124,7 +157,7 @@ void PrintAccelBuffers() {
     BIOOutCRLF();
     for (INT16U i = 0; i < SAMPLES_PER_BLOCK; i++) {
         BIOPutStrg(" 0x");
-        BIOOutHexHWord(AccelSamplesY[i]);
+        BIOOutHexHWord(buffer->samplesY[i]);
         BIOWrite(',');
     }
 
@@ -134,16 +167,16 @@ void PrintAccelBuffers() {
     BIOOutCRLF();
     for (INT16U i = 0; i < SAMPLES_PER_BLOCK; i++) {
         BIOPutStrg(" 0x");
-        BIOOutHexHWord(AccelSamplesZ[i]);
+        BIOOutHexHWord(buffer->samplesZ[i]);
         BIOWrite(',');
     }
     BIOOutCRLF();
     BIOOutCRLF();
 }
 
-INT8U AccelTriggered() {
+INT8U AccelTriggered(ACCEL_DATA_3D* AccelData3D) {
     INT8U triggerStatus = 0;
-    if ((AccelData3D.x > 4000 || AccelData3D.x < -4000) || (AccelData3D.y > 4000 || AccelData3D.y < -4000) || (AccelData3D.z > 4000 || AccelData3D.z < -4000)) {
+    if ((AccelData3D->x > 4000 || AccelData3D->x < -4000) || (AccelData3D->y > 4000 || AccelData3D->y < -4000) || (AccelData3D->z > 4000 || AccelData3D->z < -4000)) {
         triggerStatus = 1;
     } else {
         triggerStatus = 0;
@@ -155,36 +188,33 @@ INT8U AccelTriggered() {
 * FillAccelBuffers -    Transfers current acceleration sample to the buffers
 *                       of x, y, z samples of current 1 second interval.
 ****************************************************************************************/
-void FillAccelBuffers() {
-    AccelSamplesX[bufferIndex] = AccelData3D.x;
-    AccelSamplesY[bufferIndex] = AccelData3D.y;
-    AccelSamplesZ[bufferIndex] = AccelData3D.z;
+void FillAccelBuffers(ACCEL_DATA_3D* AccelData3D, ACCEL_BUFFERS* buffer, INT16U* bufferIndexPtr) {
+    INT16U bufferIndex = *bufferIndexPtr;
+    buffer->samplesX[bufferIndex] = AccelData3D->x;
+    buffer->samplesY[bufferIndex] = AccelData3D->y;
+    buffer->samplesZ[bufferIndex] = AccelData3D->z;
     bufferIndex++;
     if (bufferIndex == SAMPLES_PER_BLOCK) {
         LEDRED_TURN_OFF();
         PIT->CHANNEL[0].TCTRL &= ~PIT_TCTRL_TEN_MASK; // Disable PIT Timer
         ProcessFlag = 1;
-        RecordAccel = 0;
         bufferIndex = 0;
     }
+    *bufferIndexPtr = bufferIndex;
 }
 
 /****************************************************************************************
 * CalculateScore -  Calculates a simple "movement" score,
 *                   more acceleration movement yields a higher score
 ****************************************************************************************/
-INT16U CalculateScore() {
+INT16U CalculateScore(ACCEL_BUFFERS* buffer) {
     /* Since the score is a sum of acceleration values for the last second,
-       we must use only positive values. */
-    arm_abs_q15(AccelSamplesX, AccelAbsResultsX, SAMPLES_PER_BLOCK);
-    arm_abs_q15(AccelSamplesY, AccelAbsResultsY, SAMPLES_PER_BLOCK);
-    arm_abs_q15(AccelSamplesZ, AccelAbsResultsZ, SAMPLES_PER_BLOCK);
-
+           we must use only positive values. */
     INT32U score = 0;
     for (INT16U i = 0; i < SAMPLES_PER_BLOCK; i++) {
-        score += (INT32U)AccelAbsResultsX[i];
-        score += (INT32U)AccelAbsResultsY[i];
-        score += (INT32U)AccelAbsResultsZ[i];
+        score += (INT32U)buffer->absX[i];
+        score += (INT32U)buffer->absY[i];
+        score += (INT32U)buffer->absZ[i];
     }
     return (INT16U)(score/8000);
 }
@@ -201,17 +231,27 @@ void PITPend() {
     }
 }
 
-void TrickIdentify() {
-    INT16S corrx[(SAMPLES_PER_BLOCK*2) - 1];
-    INT16S corry[(SAMPLES_PER_BLOCK*2) - 1];
-    INT16S corrz[(SAMPLES_PER_BLOCK*2) - 1];
+//                                          REPLACE WITH ARRAY OF DB STRUCTS
+void TrickIdentify(ACCEL_BUFFERS* buffer, ACCEL_BUFFERS* backnforthbuffer, INT16S* corr_maxes) {
+    INT32S corrx[(SAMPLES_PER_BLOCK*2) - 1];
+    INT32S corry[(SAMPLES_PER_BLOCK*2) - 1];
+    INT32S corrz[(SAMPLES_PER_BLOCK*2) - 1];
 
-    arm_correlate_fast_q15(AccelSamplesX, SAMPLES_PER_BLOCK, BACK_N_FORTH_X, SAMPLES_PER_BLOCK, corrx);
-    arm_max_q15(corrx, (SAMPLES_PER_BLOCK*2) - 1, &max_x_val, &max_x_index);
-    arm_correlate_fast_q15(AccelSamplesY, SAMPLES_PER_BLOCK, BACK_N_FORTH_Y, SAMPLES_PER_BLOCK, corry);
-    arm_max_q15(corry, (SAMPLES_PER_BLOCK*2) - 1, &max_y_val, &max_y_index);
-    arm_correlate_fast_q15(AccelSamplesZ, SAMPLES_PER_BLOCK, BACK_N_FORTH_Z, SAMPLES_PER_BLOCK, corrz);
-    arm_max_q15(corrz, (SAMPLES_PER_BLOCK*2) - 1, &max_z_val, &max_z_index);
+    INT32U max_x_index, max_y_index, max_z_index;
+
+    arm_correlate_q31((INT32S*)buffer->samplesX, SAMPLES_PER_BLOCK, (INT32S*)backnforthbuffer->samplesX, SAMPLES_PER_BLOCK, corrx);
+    arm_max_q31(corrx, (SAMPLES_PER_BLOCK*2) - 1, &corr_maxes[0], &max_x_index);
+    arm_correlate_q31((INT32S*)buffer->samplesY, SAMPLES_PER_BLOCK, (INT32S*)backnforthbuffer->samplesY, SAMPLES_PER_BLOCK, corry);
+    arm_max_q31(corry, (SAMPLES_PER_BLOCK*2) - 1, &corr_maxes[1], &max_y_index);
+    arm_correlate_q31((INT32S*)buffer->samplesZ, SAMPLES_PER_BLOCK, (INT32S*)backnforthbuffer->samplesZ, SAMPLES_PER_BLOCK, corrz);
+    arm_max_q31(corrz, (SAMPLES_PER_BLOCK*2) - 1, &corr_maxes[2], &max_z_index);
+
+}
+
+void AccelDataAbsoluteValues(ACCEL_BUFFERS* buffer) {
+    arm_abs_q15(buffer->samplesX, buffer->absX, SAMPLES_PER_BLOCK);
+    arm_abs_q15(buffer->samplesY, buffer->absY, SAMPLES_PER_BLOCK);
+    arm_abs_q15(buffer->samplesZ, buffer->absZ, SAMPLES_PER_BLOCK);
 }
 
 /****************************************************************************************
