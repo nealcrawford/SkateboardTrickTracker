@@ -57,7 +57,7 @@ void main(void) {
     }
     AccelDataAbsoluteValues(&BackNForthData);
     NormalizeAccelData(&BackNForthData);
-    //PrintAccelBuffers(&BackNForthData);
+    PrintAccelBuffers(&BackNForthData);
 
     PITInit();
     while (1) { // Event loop
@@ -77,6 +77,7 @@ void main(void) {
                 AccelDataAbsoluteValues(&SampleData);
                 currentScore = CalculateScore(&SampleData);
                 NormalizeAccelData(&SampleData);
+                PrintAccelBuffers(&SampleData);
                 TrickIdentify(&SampleData, &BackNForthData, CorrelationMaxes);
                 BIOOutDecWord(currentScore, 1);
                 BIOOutCRLF();
@@ -146,31 +147,31 @@ void PrintAccelBuffers(ACCEL_BUFFERS* buffer) {
     BIOPutStrg("AccelSamplesX=");
     BIOOutCRLF();
     for (INT16U i = 0; i < SAMPLES_PER_BLOCK; i++) {
-        BIOPutStrg(" 0x");
+        BIOPutStrg("0x");
         BIOOutHexHWord(buffer->samplesX[i]);
         BIOWrite(',');
+        BIOOutCRLF();
     }
 
-    BIOOutCRLF();
     BIOOutCRLF();
     BIOPutStrg("AccelSamplesY=");
     BIOOutCRLF();
     for (INT16U i = 0; i < SAMPLES_PER_BLOCK; i++) {
-        BIOPutStrg(" 0x");
+        BIOPutStrg("0x");
         BIOOutHexHWord(buffer->samplesY[i]);
         BIOWrite(',');
+        BIOOutCRLF();
     }
 
-    BIOOutCRLF();
     BIOOutCRLF();
     BIOPutStrg("AccelSamplesZ=");
     BIOOutCRLF();
     for (INT16U i = 0; i < SAMPLES_PER_BLOCK; i++) {
-        BIOPutStrg(" 0x");
+        BIOPutStrg("0x");
         BIOOutHexHWord(buffer->samplesZ[i]);
         BIOWrite(',');
+        BIOOutCRLF();
     }
-    BIOOutCRLF();
     BIOOutCRLF();
 }
 
