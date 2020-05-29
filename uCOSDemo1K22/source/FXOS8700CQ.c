@@ -47,8 +47,8 @@ void AccelInit(void){
     MMA8451RegWr(0x5B, 0x00); // Only accelerometer active
     //MMA8451RegWr(MMA8451_OFF_X, 0xEF); // Offset accel. x values by -17 LSB = 34.16mg -- NOT REALLY NECESSARY WITH HPF ENABLED
     //MMA8451RegWr(MMA8451_OFF_Y, 0x31); // Offset accel. y values by  49 LSB =  97.6mg -- NOT REALLY NECESSARY WITH HPF ENABLED
-    MMA8451RegWr(MMA8451_XYZ_DATA_CFG, 0x11); // Configure for +/- 4g accelerometer range and high pass filtering
-    MMA8451RegWr(MMA8451_HP_FILTER_CUTOFF, 0x02); // HPF cutoff at 4 Hz.
+    MMA8451RegWr(MMA8451_XYZ_DATA_CFG, 0x01); // Configure for +/- 4g accelerometer range
+    //MMA8451RegWr(MMA8451_HP_FILTER_CUTOFF, 0x02); // HPF cutoff at 4 Hz.
     /* Breakpoint immediately below this line allows for confirmation that accelerometer is not in a "stuck" state out of startup  */
     MMA8451RegWr(MMA8451_CTRL_REG1, 0x05); // Set 800 Hz ODR, Normal 16-bit read, low noise mode, bring accelerometer out of standby
 }

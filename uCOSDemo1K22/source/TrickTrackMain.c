@@ -18,9 +18,11 @@ INT16U CalculateScore(ACCEL_BUFFERS* buffer);
 void FillAccelBuffers(ACCEL_DATA_3D* AccelData3D, ACCEL_BUFFERS* buffer, INT16U* bufferIndexPtr);
 INT8U AccelTriggered(ACCEL_DATA_3D* AccelData3D);
 void PrintAccelBuffers(ACCEL_BUFFERS* buffer);
-void TrickIdentify(ACCEL_BUFFERS* buffer, ACCEL_BUFFERS* backnforthbuffer, INT16S* corr_maxes);
+void TrickIdentify(ACCEL_BUFFERS* buffer, ACCEL_BUFFERS* backnforthbuffer, INT32S* corr_maxes);
 void NormalizeAccelData(ACCEL_BUFFERS* buffer);
 void AccelDataAbsoluteValues(ACCEL_BUFFERS* buffer);
+INT32S CorrelCoeff(INT16S* curr_data_buffer, INT16S* db_buffer);
+uint64_t SquareRoot(uint64_t a_nInput);
 
 static INT8U ProcessFlag;
 
@@ -51,13 +53,13 @@ void main(void) {
 
     //Initialize trick database buffer
     for (INT16U i = 0; i < SAMPLES_PER_BLOCK; i++) {
-        BackNForthData.samplesX[i] = BACK_N_FORTH_X[i];
-        BackNForthData.samplesY[i] = BACK_N_FORTH_Y[i];
-        BackNForthData.samplesZ[i] = BACK_N_FORTH_Z[i];
+        BackNForthData.samplesX[i] = BACK_N_FORTH_X_NONHPF[i];
+        BackNForthData.samplesY[i] = BACK_N_FORTH_Y_NONHPF[i];
+        BackNForthData.samplesZ[i] = BACK_N_FORTH_Z_NONHPF[i];
     }
     AccelDataAbsoluteValues(&BackNForthData);
     NormalizeAccelData(&BackNForthData);
-    PrintAccelBuffers(&BackNForthData);
+    //PrintAccelBuffers(&BackNForthData);
 
     PITInit();
     while (1) { // Event loop
@@ -77,7 +79,7 @@ void main(void) {
                 AccelDataAbsoluteValues(&SampleData);
                 currentScore = CalculateScore(&SampleData);
                 NormalizeAccelData(&SampleData);
-                PrintAccelBuffers(&SampleData);
+                //PrintAccelBuffers(&SampleData);
                 TrickIdentify(&SampleData, &BackNForthData, CorrelationMaxes);
                 BIOOutDecWord(currentScore, 1);
                 BIOOutCRLF();
@@ -119,7 +121,7 @@ static INT8U log2(INT16U x) {
 ****************************************************************************************/
 void NormalizeAccelData(ACCEL_BUFFERS* buffer) {
     INT16S max_x, max_y, max_z;
-    INT32U max_x_index, max_y_index, max_z_index;
+    uint32_t max_x_index, max_y_index, max_z_index;
 
     // Find maximum value in each dimension to determine scale factor
     arm_max_q15(buffer->absX, SAMPLES_PER_BLOCK, &max_x, &max_x_index);
@@ -233,20 +235,92 @@ void PITPend() {
 }
 
 //                                          REPLACE WITH ARRAY OF DB STRUCTS
-void TrickIdentify(ACCEL_BUFFERS* buffer, ACCEL_BUFFERS* backnforthbuffer, INT16S* corr_maxes) {
-    INT32S corrx[(SAMPLES_PER_BLOCK*2) - 1];
-    INT32S corry[(SAMPLES_PER_BLOCK*2) - 1];
-    INT32S corrz[(SAMPLES_PER_BLOCK*2) - 1];
+void TrickIdentify(ACCEL_BUFFERS* buffer, ACCEL_BUFFERS* backnforthbuffer, INT32S* corr_maxes) {
+    corr_maxes[0] = CorrelCoeff(buffer->samplesX, backnforthbuffer->samplesX);
+    corr_maxes[1] = CorrelCoeff(buffer->samplesY, backnforthbuffer->samplesY);
+    corr_maxes[2] = CorrelCoeff(buffer->samplesZ, backnforthbuffer->samplesZ);
+}
 
-    INT32U max_x_index, max_y_index, max_z_index;
+/****************************************************************************************
+* SquareRoot -  Shamelessly copied from stack overflow, after arm_sqrt did not work
+*            -  modified slightly for int64u input
+* https://stackoverflow.com/questions/1100090/looking-for-an-efficient-integer-square-root-algorithm-for-arm-thumb2
+****************************************************************************************/
+uint64_t SquareRoot(uint64_t a_nInput)
+{
+    uint64_t op  = a_nInput;
+    uint64_t res = 0;
+    uint64_t one = 1ULL << 62; // The second-to-top bit is set: use 1u << 14 for uint16_t type; use 1uL<<30 for uint32_t type
 
-    arm_correlate_q31((INT32S*)buffer->samplesX, SAMPLES_PER_BLOCK, (INT32S*)backnforthbuffer->samplesX, SAMPLES_PER_BLOCK, corrx);
-    arm_max_q31(corrx, (SAMPLES_PER_BLOCK*2) - 1, &corr_maxes[0], &max_x_index);
-    arm_correlate_q31((INT32S*)buffer->samplesY, SAMPLES_PER_BLOCK, (INT32S*)backnforthbuffer->samplesY, SAMPLES_PER_BLOCK, corry);
-    arm_max_q31(corry, (SAMPLES_PER_BLOCK*2) - 1, &corr_maxes[1], &max_y_index);
-    arm_correlate_q31((INT32S*)buffer->samplesZ, SAMPLES_PER_BLOCK, (INT32S*)backnforthbuffer->samplesZ, SAMPLES_PER_BLOCK, corrz);
-    arm_max_q31(corrz, (SAMPLES_PER_BLOCK*2) - 1, &corr_maxes[2], &max_z_index);
 
+    // "one" starts at the highest power of four <= than the argument.
+    while (one > op)
+    {
+        one >>= 2;
+    }
+
+    while (one != 0)
+    {
+        if (op >= res + one)
+        {
+            op = op - (res + one);
+            res = res +  2 * one;
+        }
+        res >>= 1;
+        one >>= 2;
+    }
+    return res;
+}
+
+INT32S CorrelCoeff(INT16S* curr_data_buffer, INT16S* db_buffer) {
+    int16_t mean_db, mean_curr;
+
+    int32_t adj_db[SAMPLES_PER_BLOCK];
+    int32_t adj_curr[SAMPLES_PER_BLOCK];
+
+    int32_t product_db_curr[SAMPLES_PER_BLOCK];
+
+    arm_mean_q15(db_buffer, SAMPLES_PER_BLOCK, &mean_db);
+    arm_mean_q15(curr_data_buffer, SAMPLES_PER_BLOCK, &mean_curr);
+
+    for (INT16U i = 0; i < SAMPLES_PER_BLOCK; i++) {
+        adj_db[i] = (int32_t)((int32_t)db_buffer[i] - (int32_t)mean_db);
+
+        adj_curr[i] = (int32_t)((int32_t)curr_data_buffer[i] - (int32_t)mean_curr);
+    }
+
+    //arm_mult_q31(adj_db, adj_curr, product_db_curr, SAMPLES_PER_BLOCK);
+    for (INT16U i = 0; i < SAMPLES_PER_BLOCK; i++) {
+        product_db_curr[i] = adj_db[i] * adj_curr[i];
+    }
+
+    int64_t sum = 0;
+    for (INT16U i = 0; i < SAMPLES_PER_BLOCK; i++) {
+        sum += product_db_curr[i];
+    }
+    int32_t numerator = (int32_t)(sum/32767);
+
+    int64_t sos_db, sos_curr;
+    for (INT16U i = 0; i < SAMPLES_PER_BLOCK; i++) {
+        adj_db[i] = adj_db[i] * adj_db[i];
+        adj_curr[i] = adj_curr[i] * adj_curr[i];
+    }
+    sos_db = 0;
+    sos_curr = 0;
+    for (INT16U i = 0; i < SAMPLES_PER_BLOCK; i++) {
+        sos_db += adj_db[i];
+        sos_curr += adj_curr[i];
+    }
+
+    int32_t sos_db_scaled = (int32_t)(sos_db/32767);
+    int32_t sos_curr_scaled = (int32_t)(sos_curr/32767);
+    uint64_t bottom_product = (uint64_t) sos_db_scaled * sos_curr_scaled;
+    //int32_t bottom_product_scaled = (int32_t)(bottom_product/32767);
+
+    int32_t denominator;
+    denominator = (int32_t)SquareRoot(bottom_product);
+
+    return (int32_t)(((int64_t)numerator * (1UL << 31)) / denominator);
 }
 
 void AccelDataAbsoluteValues(ACCEL_BUFFERS* buffer) {
