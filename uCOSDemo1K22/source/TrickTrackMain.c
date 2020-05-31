@@ -18,11 +18,12 @@ INT16U CalculateScore(ACCEL_BUFFERS* buffer);
 void FillAccelBuffers(ACCEL_DATA_3D* AccelData3D, ACCEL_BUFFERS* buffer, INT16U* bufferIndexPtr);
 INT8U AccelTriggered(ACCEL_DATA_3D* AccelData3D);
 void PrintAccelBuffers(ACCEL_BUFFERS* buffer);
-void TrickIdentify(ACCEL_BUFFERS* buffer, ACCEL_BUFFERS* backnforthbuffer, INT32S* corr_maxes);
+void TrickIdentify(ACCEL_BUFFERS* buffer);
 void NormalizeAccelData(ACCEL_BUFFERS* buffer);
 void AccelDataAbsoluteValues(ACCEL_BUFFERS* buffer);
 INT32S CorrelCoeff(INT16S* curr_data_buffer, INT16S* db_buffer);
 uint64_t SquareRoot(uint64_t a_nInput);
+void LoadDBBuffer(ACCEL_BUFFERS* buffer, INT8U trick_index);
 
 static INT8U ProcessFlag;
 
@@ -47,19 +48,6 @@ void main(void) {
     INT8U RECORD = 0;
     ACCEL_DATA_3D CurrAccelSample;
     ACCEL_BUFFERS SampleData;
-    ACCEL_BUFFERS BackNForthData;
-
-    INT32S CorrelationMaxes[3];
-
-    //Initialize trick database buffer
-    for (INT16U i = 0; i < SAMPLES_PER_BLOCK; i++) {
-        BackNForthData.samplesX[i] = BACK_N_FORTH_X_NONHPF[i];
-        BackNForthData.samplesY[i] = BACK_N_FORTH_Y_NONHPF[i];
-        BackNForthData.samplesZ[i] = BACK_N_FORTH_Z_NONHPF[i];
-    }
-    AccelDataAbsoluteValues(&BackNForthData);
-    NormalizeAccelData(&BackNForthData);
-    //PrintAccelBuffers(&BackNForthData);
 
     PITInit();
     while (1) { // Event loop
@@ -80,7 +68,7 @@ void main(void) {
                 currentScore = CalculateScore(&SampleData);
                 NormalizeAccelData(&SampleData);
                 //PrintAccelBuffers(&SampleData);
-                TrickIdentify(&SampleData, &BackNForthData, CorrelationMaxes);
+                TrickIdentify(&SampleData);
                 BIOOutDecWord(currentScore, 1);
                 BIOOutCRLF();
             }
@@ -108,6 +96,25 @@ void main(void) {
     }
 }
 
+void LoadDBBuffer(ACCEL_BUFFERS* buffer, INT8U trickIndex) {
+    if (trickIndex == 0) {
+        arm_copy_q15((q15_t *)BACK_N_FORTH_X_NONHPF, buffer->samplesX, SAMPLES_PER_BLOCK);
+        arm_copy_q15((q15_t *)BACK_N_FORTH_Y_NONHPF, buffer->samplesY, SAMPLES_PER_BLOCK);
+        arm_copy_q15((q15_t *)BACK_N_FORTH_Z_NONHPF, buffer->samplesZ, SAMPLES_PER_BLOCK);
+    } else if (trickIndex == 1) {
+        arm_copy_q15((q15_t *)BARREL_ROLL_X, buffer->samplesX, SAMPLES_PER_BLOCK);
+        arm_copy_q15((q15_t *)BARREL_ROLL_Y, buffer->samplesY, SAMPLES_PER_BLOCK);
+        arm_copy_q15((q15_t *)BARREL_ROLL_Z, buffer->samplesZ, SAMPLES_PER_BLOCK);
+
+    } else {
+        arm_copy_q15((q15_t *)SPIN_TRICK180_X, buffer->samplesX, SAMPLES_PER_BLOCK);
+        arm_copy_q15((q15_t *)SPIN_TRICK180_Y, buffer->samplesY, SAMPLES_PER_BLOCK);
+        arm_copy_q15((q15_t *)SPIN_TRICK180_Z, buffer->samplesZ, SAMPLES_PER_BLOCK);
+    }
+    AccelDataAbsoluteValues(buffer);
+    NormalizeAccelData(buffer);
+}
+
 static INT8U log2(INT16U x) {
     INT8U ans = 0;
     while( x>>=1 ) {
@@ -121,6 +128,7 @@ static INT8U log2(INT16U x) {
 ****************************************************************************************/
 void NormalizeAccelData(ACCEL_BUFFERS* buffer) {
     INT16S max_x, max_y, max_z;
+    INT16U x_frac, y_frac, z_frac;
     uint32_t max_x_index, max_y_index, max_z_index;
 
     // Find maximum value in each dimension to determine scale factor
@@ -133,9 +141,9 @@ void NormalizeAccelData(ACCEL_BUFFERS* buffer) {
     shift_y = log2((INT16U)(Q_MAX/max_y))+1;
     shift_z = log2((INT16U)(Q_MAX/max_z))+1;
 
-    INT16U x_frac = (INT16U)(((Q_MAX << 15)/(INT32U)max_x) >> shift_x); // AccelSamples[n] * x_frac << 2
-    INT16U y_frac = (INT16U)(((Q_MAX << 15)/(INT32U)max_y) >> shift_y);
-    INT16U z_frac = (INT16U)(((Q_MAX << 15)/(INT32U)max_z) >> shift_z);
+    x_frac = (INT16U)(((Q_MAX << 15)/(INT32U)max_x) >> shift_x); // AccelSamples[n] * x_frac << 2
+    y_frac = (INT16U)(((Q_MAX << 15)/(INT32U)max_y) >> shift_y);
+    z_frac = (INT16U)(((Q_MAX << 15)/(INT32U)max_z) >> shift_z);
 
     arm_scale_q15(buffer->samplesX, x_frac, shift_x, buffer->samplesX, SAMPLES_PER_BLOCK);
     arm_scale_q15(buffer->samplesY, y_frac, shift_y, buffer->samplesY, SAMPLES_PER_BLOCK);
@@ -234,11 +242,49 @@ void PITPend() {
     }
 }
 
-//                                          REPLACE WITH ARRAY OF DB STRUCTS
-void TrickIdentify(ACCEL_BUFFERS* buffer, ACCEL_BUFFERS* backnforthbuffer, INT32S* corr_maxes) {
-    corr_maxes[0] = CorrelCoeff(buffer->samplesX, backnforthbuffer->samplesX);
-    corr_maxes[1] = CorrelCoeff(buffer->samplesY, backnforthbuffer->samplesY);
-    corr_maxes[2] = CorrelCoeff(buffer->samplesZ, backnforthbuffer->samplesZ);
+void TrickIdentify(ACCEL_BUFFERS* buffer) {
+    INT32S corrCoeffX, corrCoeffY, corrCoeffZ;
+    INT32S corr_means[NUM_DB_TRICKS];
+    INT8U div_count;
+    INT64S current_mean;
+    ACCEL_BUFFERS db_buffer;
+
+    for (INT8U i = 0; i < NUM_DB_TRICKS; i++) {
+        div_count = 0;
+        current_mean = 0;
+        LoadDBBuffer(&db_buffer, i);
+        corrCoeffX = CorrelCoeff(buffer->samplesX, db_buffer.samplesX);
+        corrCoeffY = CorrelCoeff(buffer->samplesY, db_buffer.samplesY);
+        corrCoeffZ = CorrelCoeff(buffer->samplesZ, db_buffer.samplesZ);
+        if (corrCoeffX > 0) {
+            current_mean += corrCoeffX;
+            div_count += 1;
+        }
+        if (corrCoeffY > 0) {
+            current_mean += corrCoeffY;
+            div_count += 1;
+        }
+        if (corrCoeffZ > 0) {
+            current_mean += corrCoeffZ;
+            div_count += 1;
+        }
+        if (div_count > 0) {
+            corr_means[i] = (INT32S)(current_mean/div_count);
+        }
+    }
+
+    q31_t max_val;
+    INT32U max_index;
+    arm_max_q31(corr_means, NUM_DB_TRICKS, &max_val, &max_index);
+
+    if (max_index == 0) {
+        BIOPutStrg("BackNForth");
+    } else if (max_index == 1) {
+        BIOPutStrg("Barrel Roll");
+    } else if (max_index == 2) {
+        BIOPutStrg("Spin 180");
+    }
+    BIOOutCRLF();
 }
 
 /****************************************************************************************
@@ -298,7 +344,7 @@ INT32S CorrelCoeff(INT16S* curr_data_buffer, INT16S* db_buffer) {
     for (INT16U i = 0; i < SAMPLES_PER_BLOCK; i++) {
         sum += product_db_curr[i];
     }
-    int32_t numerator = (int32_t)(sum/32767);
+    int32_t numerator = (int32_t)(sum >> 15);
 
     int64_t sos_db, sos_curr;
     for (INT16U i = 0; i < SAMPLES_PER_BLOCK; i++) {
@@ -312,10 +358,9 @@ INT32S CorrelCoeff(INT16S* curr_data_buffer, INT16S* db_buffer) {
         sos_curr += adj_curr[i];
     }
 
-    int32_t sos_db_scaled = (int32_t)(sos_db/32767);
-    int32_t sos_curr_scaled = (int32_t)(sos_curr/32767);
+    int32_t sos_db_scaled = (int32_t)(sos_db >> 15);
+    int32_t sos_curr_scaled = (int32_t)(sos_curr >> 15);
     uint64_t bottom_product = (uint64_t) sos_db_scaled * sos_curr_scaled;
-    //int32_t bottom_product_scaled = (int32_t)(bottom_product/32767);
 
     int32_t denominator;
     denominator = (int32_t)SquareRoot(bottom_product);
