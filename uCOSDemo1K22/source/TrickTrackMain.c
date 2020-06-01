@@ -97,20 +97,9 @@ void main(void) {
 }
 
 void LoadDBBuffer(ACCEL_BUFFERS* buffer, INT8U trickIndex) {
-    if (trickIndex == 0) {
-        arm_copy_q15((q15_t *)BACK_N_FORTH_X_NONHPF, buffer->samplesX, SAMPLES_PER_BLOCK);
-        arm_copy_q15((q15_t *)BACK_N_FORTH_Y_NONHPF, buffer->samplesY, SAMPLES_PER_BLOCK);
-        arm_copy_q15((q15_t *)BACK_N_FORTH_Z_NONHPF, buffer->samplesZ, SAMPLES_PER_BLOCK);
-    } else if (trickIndex == 1) {
-        arm_copy_q15((q15_t *)BARREL_ROLL_X, buffer->samplesX, SAMPLES_PER_BLOCK);
-        arm_copy_q15((q15_t *)BARREL_ROLL_Y, buffer->samplesY, SAMPLES_PER_BLOCK);
-        arm_copy_q15((q15_t *)BARREL_ROLL_Z, buffer->samplesZ, SAMPLES_PER_BLOCK);
-
-    } else {
-        arm_copy_q15((q15_t *)SPIN_TRICK180_X, buffer->samplesX, SAMPLES_PER_BLOCK);
-        arm_copy_q15((q15_t *)SPIN_TRICK180_Y, buffer->samplesY, SAMPLES_PER_BLOCK);
-        arm_copy_q15((q15_t *)SPIN_TRICK180_Z, buffer->samplesZ, SAMPLES_PER_BLOCK);
-    }
+    arm_copy_q15((q15_t *)TRICK_DB[trickIndex][0], buffer->samplesX, SAMPLES_PER_BLOCK);
+    arm_copy_q15((q15_t *)TRICK_DB[trickIndex][1], buffer->samplesY, SAMPLES_PER_BLOCK);
+    arm_copy_q15((q15_t *)TRICK_DB[trickIndex][2], buffer->samplesZ, SAMPLES_PER_BLOCK);
     AccelDataAbsoluteValues(buffer);
     NormalizeAccelData(buffer);
 }
@@ -292,23 +281,19 @@ void TrickIdentify(ACCEL_BUFFERS* buffer) {
 *            -  modified slightly for int64u input
 * https://stackoverflow.com/questions/1100090/looking-for-an-efficient-integer-square-root-algorithm-for-arm-thumb2
 ****************************************************************************************/
-uint64_t SquareRoot(uint64_t a_nInput)
+INT64U SquareRoot(INT64U a_nInput)
 {
-    uint64_t op  = a_nInput;
-    uint64_t res = 0;
-    uint64_t one = 1ULL << 62; // The second-to-top bit is set: use 1u << 14 for uint16_t type; use 1uL<<30 for uint32_t type
-
+    INT64U op  = a_nInput;
+    INT64U res = 0;
+    INT64U one = 1ULL << 62; // The second-to-top bit is set: use 1u << 14 for uint16_t type; use 1uL<<30 for uint32_t type
 
     // "one" starts at the highest power of four <= than the argument.
-    while (one > op)
-    {
+    while (one > op) {
         one >>= 2;
     }
 
-    while (one != 0)
-    {
-        if (op >= res + one)
-        {
+    while (one != 0) {
+        if (op >= res + one) {
             op = op - (res + one);
             res = res +  2 * one;
         }
