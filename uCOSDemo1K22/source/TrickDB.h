@@ -2,8 +2,6 @@
  * DESCRIPTION: A database for skateboard trick accelerometer x,y,z movement.
  * AUTHOR: Neal Crawford
  * HISTORY: Started 05/27/2020
- * Revision: 11/23/2015 TDM Modified for K65. Required GPIOs to be set to open-drain
- * Revision: 05/11/2020 by Neal Crawford for the FXOS8700CQ accelerometer on K22F
 *****************************************************************************************/
 
 #define SAMPLES_PER_BLOCK 1600 // Two seconds of acceleration data
