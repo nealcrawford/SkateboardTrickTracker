@@ -1,16 +1,10 @@
-/*
- * FXOS8700CQ.c
- *
- *  Created on: May 11, 2020
- *      Author: ncraw
- */
-
 /****************************************************************************************
- * DESCRIPTION: A driver module for the MMA8451Q Accelerometer on the I2C.
- *              As connected on the K65 Tower Board
+ * DESCRIPTION: A driver module for the FXOS8700CQ Accelerometer on the I2C.
+ *              Modified for the FXOS8700CQ, this file was originally written for the MMA8451Q.
  * AUTHOR: Todd Morton
  * HISTORY: Started 11/24/14
  * Revision: 11/23/2015 TDM Modified for K65. Required GPIOs to be set to open-drain
+ * Revision: 05/11/2020 by Neal Crawford for the FXOS8700CQ accelerometer on K22F
 *****************************************************************************************
 * Master header file
 ****************************************************************************************/
@@ -24,13 +18,11 @@ static void I2CWr(INT8U dout);
 static void I2CRd(INT8U* accelDataBuffer);
 static void I2CStop(void);
 static void I2CStart(void);
+static void FXOSRegRd(INT8U raddr, INT8U* accelDataBuffer);
+static void FXOSRegWr(INT8U waddr, INT8U wdata);
 
 /****************************************************************************************
-* Private variables
-****************************************************************************************/
-
-/****************************************************************************************
-* AccelInit - Initialize I2C for the MMA8451Q
+* AccelInit - Initialize I2C for the FXOS8700CQ
 ****************************************************************************************/
 void AccelInit(void){
     SIM->SCGC4 |= SIM_SCGC4_I2C0_MASK;               /*Turn on I2C clock                */
@@ -43,42 +35,42 @@ void AccelInit(void){
     I2C0->C1 |= I2C_C1_IICEN(1);    /* Enable I2C0 and interrupts    */
     I2C0->S |= I2C_S_IICIF(1);                 /* Clear IICIF flag                    */
 
-    MMA8451RegWr(MMA8451_CTRL_REG1, 0x00); // Put accelerometer into standby mode
-    MMA8451RegWr(0x5B, 0x00); // Only accelerometer active
-    //MMA8451RegWr(MMA8451_OFF_X, 0xEF); // Offset accel. x values by -17 LSB = 34.16mg -- NOT REALLY NECESSARY WITH HPF ENABLED
-    //MMA8451RegWr(MMA8451_OFF_Y, 0x31); // Offset accel. y values by  49 LSB =  97.6mg -- NOT REALLY NECESSARY WITH HPF ENABLED
-    MMA8451RegWr(MMA8451_XYZ_DATA_CFG, 0x01); // Configure for +/- 4g accelerometer range
-    //MMA8451RegWr(MMA8451_HP_FILTER_CUTOFF, 0x02); // HPF cutoff at 4 Hz.
+    FXOSRegWr(FXOS_CTRL_REG1, 0x00); // Put accelerometer into standby mode
+    FXOSRegWr(0x5B, 0x00); // Only accelerometer active
+    //FXOSRegWr(FXOS_OFF_X, 0xEF); // Offset accel. x values by -17 LSB = 34.16mg -- NOT REALLY NECESSARY WITH HPF ENABLED
+    //FXOSRegWr(FXOS_OFF_Y, 0x31); // Offset accel. y values by  49 LSB =  97.6mg -- NOT REALLY NECESSARY WITH HPF ENABLED
+    FXOSRegWr(FXOS_XYZ_DATA_CFG, 0x01); // Configure for +/- 4g accelerometer range
+    //FXOSRegWr(FXOS_HP_FILTER_CUTOFF, 0x02); // HPF cutoff at 4 Hz.
     /* Breakpoint immediately below this line allows for confirmation that accelerometer is not in a "stuck" state out of startup  */
-    MMA8451RegWr(MMA8451_CTRL_REG1, 0x05); // Set 800 Hz ODR, Normal 16-bit read, low noise mode, bring accelerometer out of standby
+    FXOSRegWr(FXOS_CTRL_REG1, 0x05); // Set 800 Hz ODR, Normal 16-bit read, low noise mode, bring accelerometer out of standby
 }
 
 /****************************************************************************************
-* MMA8451RegWr - Write to MMA8451 register. Blocks until Xmit is complete.
+* FXOSRegWr - Write to FXOS register. Blocks until Xmit is complete.
 * Parameters:
-*   waddr is the address of the MMA8451 register to write
+*   waddr is the address of the FXOS register to write
 *   wdata is the value to be written to waddr
 ****************************************************************************************/
-void MMA8451RegWr(INT8U waddr, INT8U wdata){
+static void FXOSRegWr(INT8U waddr, INT8U wdata){
     I2CStart();                     /* Create I2C start                                */
-    I2CWr((MMA8451_ADDR<<1)|WR);    /* Send MMA8451 address & W/R' bit                 */
+    I2CWr((FXOS_ADDR<<1)|WR);    /* Send FXOS address & W/R' bit                 */
     I2CWr(waddr);                   /* Send register address                           */
     I2CWr(wdata);                   /* Send write data                                 */
     I2CStop();                      /* Create I2C stop                                 */
 }
 /****************************************************************************************
-* MMA8451RegRd - Read from MMA8451 register. Blocks until read is complete
+* FXOSRegRd - Read from FXOS register. Blocks until read is complete
 * Parameters:
 *   raddr is the register address to read
 *   return value is the value read
 ****************************************************************************************/
-void MMA8451RegRd(INT8U raddr, INT8U* accelDataBuffer){
+static void FXOSRegRd(INT8U raddr, INT8U* accelDataBuffer){
     I2CStart();                     /* Create I2C start                                */
-    I2CWr((MMA8451_ADDR<<1)|WR);    /* Send MMA8451 address & W/R' bit                 */
+    I2CWr((FXOS_ADDR<<1)|WR);    /* Send FXOS address & W/R' bit                 */
     I2CWr(raddr);                   /* Send register address                           */
     I2C0->C1 |= I2C_C1_RSTA_MASK;    /* Repeated Start                                  */
-    I2CWr((MMA8451_ADDR<<1)|RD);    /* Send MMA8451 address & W/R' bit                 */
-    I2CRd(accelDataBuffer);                /* Send to read MMA8451 return value               */
+    I2CWr((FXOS_ADDR<<1)|RD);    /* Send FXOS address & W/R' bit                 */
+    I2CRd(accelDataBuffer);                /* Send to read FXOS return value               */
 }
 /****************************************************************************************
 * I2CWr - Write one byte to I2C. Blocks until byte Xmit is complete
@@ -92,9 +84,8 @@ static void I2CWr(INT8U dout){
 }
 
 /****************************************************************************************
-* I2CRd - Read one byte from I2C. Blocks until byte reception is complete
-* Parameters:
-*   Return value is the data returned from the MMA8451
+* I2CRd - Burst read seven bytes from accelerometer. Blocks until byte reception is complete
+* Parameters: Buffer to store each of the 7 bytes
 ****************************************************************************************/
 static void I2CRd(INT8U* accelDataBuffer){
     INT8U din;
@@ -136,7 +127,7 @@ static void I2CStart(void){
 void AccelSampleTask(ACCEL_DATA_3D* accelData) {
     INT8U dataBuffer[7] = {0, 0, 0, 0, 0, 0, 0};
 
-    MMA8451RegRd(MMA8451_STATUS, dataBuffer); // Burst read acceleration data output registers, providing start address.
+    FXOSRegRd(FXOS_STATUS, dataBuffer); // Burst read acceleration data output registers, providing start address.
 
     // Copy 14-bit acceleration data from buffer to accel. data structure
     accelData->x = (INT16S)(((dataBuffer[1] << 8) | dataBuffer[2]))>> 2;

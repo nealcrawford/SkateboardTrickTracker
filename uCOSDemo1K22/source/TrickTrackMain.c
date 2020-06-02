@@ -1,6 +1,7 @@
 /*****************************************************************************************
 * A skate board trick-tracking program.
-* 05/07/2020, Neal Crawford
+* AUTHOR: Neal Crawford
+* HISTORY: Started 05/07/2020
 *****************************************************************************************/
 #include "MCUType.h"
 #include "K22FRDM_ClkCfg.h"
@@ -12,20 +13,31 @@
 #define LDVAL_800HZ 62499   // (50MHz / 800 Hz) - 1
 #define Q_MAX 32767U
 
-void PITInit(void);
-void PITPend(void);
-INT16U CalculateScore(ACCEL_BUFFERS* buffer);
-void FillAccelBuffers(ACCEL_DATA_3D* AccelData3D, ACCEL_BUFFERS* buffer, INT16U* bufferIndexPtr);
-INT8U AccelTriggered(ACCEL_DATA_3D* AccelData3D);
-void PrintAccelBuffers(ACCEL_BUFFERS* buffer);
-void TrickIdentify(ACCEL_BUFFERS* buffer);
-void NormalizeAccelData(ACCEL_BUFFERS* buffer);
-void AccelDataAbsoluteValues(ACCEL_BUFFERS* buffer);
-INT32S CorrelCoeff(INT16S* curr_data_buffer, INT16S* db_buffer);
-uint64_t SquareRoot(uint64_t a_nInput);
-void LoadDBBuffer(ACCEL_BUFFERS* buffer, INT8U trick_index);
+/*****************************************************************************************
+* Function Prototypes
+*****************************************************************************************/
+static void PITInit(void);
+static void PITPend(void);
+static INT16U CalculateScore(ACCEL_BUFFERS* buffer);
+static INT8U AccelTriggered(ACCEL_DATA_3D* AccelData3D);
+static void PrintAccelBuffers(ACCEL_BUFFERS* buffer);
+static void FillAccelBuffers(ACCEL_DATA_3D* AccelData3D, ACCEL_BUFFERS* buffer, INT16U* bufferIndexPtr);
+static void TrickIdentify(ACCEL_BUFFERS* buffer);
+static void NormalizeAccelData(ACCEL_BUFFERS* buffer);
+static void AccelDataAbsoluteValues(ACCEL_BUFFERS* buffer);
+static INT32S CorrelCoeff(INT16S* curr_data_buffer, INT16S* db_buffer);
+static INT64U SquareRoot(INT64U a_nInput);
+static INT8U Log2(INT16U x);
+static void LoadDBBuffer(ACCEL_BUFFERS* buffer, INT8U trick_index);
 
+/*****************************************************************************************/
+
+
+/*****************************************************************************************
+* Static file variables
+*****************************************************************************************/
 static INT8U ProcessFlag;
+/*****************************************************************************************/
 
 
 /*****************************************************************************************
@@ -96,7 +108,10 @@ void main(void) {
     }
 }
 
-void LoadDBBuffer(ACCEL_BUFFERS* buffer, INT8U trickIndex) {
+/****************************************************************************************
+* LoadDBBuffer - Loads the X,Y,Z data from desired database trick into the given buffer structure
+****************************************************************************************/
+static void LoadDBBuffer(ACCEL_BUFFERS* buffer, INT8U trickIndex) {
     arm_copy_q15((q15_t *)TRICK_DB[trickIndex][0], buffer->samplesX, SAMPLES_PER_BLOCK);
     arm_copy_q15((q15_t *)TRICK_DB[trickIndex][1], buffer->samplesY, SAMPLES_PER_BLOCK);
     arm_copy_q15((q15_t *)TRICK_DB[trickIndex][2], buffer->samplesZ, SAMPLES_PER_BLOCK);
@@ -104,7 +119,10 @@ void LoadDBBuffer(ACCEL_BUFFERS* buffer, INT8U trickIndex) {
     NormalizeAccelData(buffer);
 }
 
-static INT8U log2(INT16U x) {
+/****************************************************************************************
+* Log2 - Returns log base 2 of the provided number
+****************************************************************************************/
+static INT8U Log2(INT16U x) {
     INT8U ans = 0;
     while( x>>=1 ) {
         ans++;
@@ -113,9 +131,11 @@ static INT8U log2(INT16U x) {
 }
 
 /****************************************************************************************
-* PrintAccelBuffers - Normalizes data to Q15. Absolute value arrays required for each dimension
+* NormalizeAccelData - Normalizes data to Q15.
+*
+*                     Absolute value arrays required for each dimension
 ****************************************************************************************/
-void NormalizeAccelData(ACCEL_BUFFERS* buffer) {
+static void NormalizeAccelData(ACCEL_BUFFERS* buffer) {
     INT16S max_x, max_y, max_z;
     INT16U x_frac, y_frac, z_frac;
     uint32_t max_x_index, max_y_index, max_z_index;
@@ -125,15 +145,17 @@ void NormalizeAccelData(ACCEL_BUFFERS* buffer) {
     arm_max_q15(buffer->absY, SAMPLES_PER_BLOCK, &max_y, &max_y_index);
     arm_max_q15(buffer->absZ, SAMPLES_PER_BLOCK, &max_z, &max_z_index);
 
+    // Determine shifts needed for arm_scale_q15(), to allow scaling to exceed 1.0
     INT8U shift_x, shift_y, shift_z;
-    shift_x = log2((INT16U)(Q_MAX/max_x))+1;
-    shift_y = log2((INT16U)(Q_MAX/max_y))+1;
-    shift_z = log2((INT16U)(Q_MAX/max_z))+1;
+    shift_x = Log2((INT16U)(Q_MAX/max_x))+1;
+    shift_y = Log2((INT16U)(Q_MAX/max_y))+1;
+    shift_z = Log2((INT16U)(Q_MAX/max_z))+1;
 
     x_frac = (INT16U)(((Q_MAX << 15)/(INT32U)max_x) >> shift_x); // AccelSamples[n] * x_frac << 2
     y_frac = (INT16U)(((Q_MAX << 15)/(INT32U)max_y) >> shift_y);
     z_frac = (INT16U)(((Q_MAX << 15)/(INT32U)max_z) >> shift_z);
 
+    // pDst[n] = (pSrc[n] * scaleFract) << shift
     arm_scale_q15(buffer->samplesX, x_frac, shift_x, buffer->samplesX, SAMPLES_PER_BLOCK);
     arm_scale_q15(buffer->samplesY, y_frac, shift_y, buffer->samplesY, SAMPLES_PER_BLOCK);
     arm_scale_q15(buffer->samplesZ, z_frac, shift_z, buffer->samplesZ, SAMPLES_PER_BLOCK);
@@ -142,7 +164,7 @@ void NormalizeAccelData(ACCEL_BUFFERS* buffer) {
 /****************************************************************************************
 * PrintAccelBuffers - Transfer the entirety of each buffer over BIOOut
 ****************************************************************************************/
-void PrintAccelBuffers(ACCEL_BUFFERS* buffer) {
+static void PrintAccelBuffers(ACCEL_BUFFERS* buffer) {
     BIOPutStrg("AccelSamplesX=");
     BIOOutCRLF();
     for (INT16U i = 0; i < SAMPLES_PER_BLOCK; i++) {
@@ -174,7 +196,11 @@ void PrintAccelBuffers(ACCEL_BUFFERS* buffer) {
     BIOOutCRLF();
 }
 
-INT8U AccelTriggered(ACCEL_DATA_3D* AccelData3D) {
+/****************************************************************************************
+* AccelTriggered - Signal to the event loop that enough movement has occurred to begin
+*                  recording to the buffers
+****************************************************************************************/
+static INT8U AccelTriggered(ACCEL_DATA_3D* AccelData3D) {
     INT8U triggerStatus = 0;
     if ((AccelData3D->x > 4000 || AccelData3D->x < -4000) || (AccelData3D->y > 4000 || AccelData3D->y < -4000) || (AccelData3D->z > 4000 || AccelData3D->z < -4000)) {
         triggerStatus = 1;
@@ -188,13 +214,13 @@ INT8U AccelTriggered(ACCEL_DATA_3D* AccelData3D) {
 * FillAccelBuffers -    Transfers current acceleration sample to the buffers
 *                       of x, y, z samples of current 1 second interval.
 ****************************************************************************************/
-void FillAccelBuffers(ACCEL_DATA_3D* AccelData3D, ACCEL_BUFFERS* buffer, INT16U* bufferIndexPtr) {
+static void FillAccelBuffers(ACCEL_DATA_3D* AccelData3D, ACCEL_BUFFERS* buffer, INT16U* bufferIndexPtr) {
     INT16U bufferIndex = *bufferIndexPtr;
     buffer->samplesX[bufferIndex] = AccelData3D->x;
     buffer->samplesY[bufferIndex] = AccelData3D->y;
     buffer->samplesZ[bufferIndex] = AccelData3D->z;
     bufferIndex++;
-    if (bufferIndex == SAMPLES_PER_BLOCK) {
+    if (bufferIndex == SAMPLES_PER_BLOCK) { // When buffers are filled, end recording and begin processing
         LEDRED_TURN_OFF();
         PIT->CHANNEL[0].TCTRL &= ~PIT_TCTRL_TEN_MASK; // Disable PIT Timer
         ProcessFlag = 1;
@@ -207,7 +233,7 @@ void FillAccelBuffers(ACCEL_DATA_3D* AccelData3D, ACCEL_BUFFERS* buffer, INT16U*
 * CalculateScore -  Calculates a simple "movement" score,
 *                   more acceleration movement yields a higher score
 ****************************************************************************************/
-INT16U CalculateScore(ACCEL_BUFFERS* buffer) {
+static INT16U CalculateScore(ACCEL_BUFFERS* buffer) {
     /* Since the score is a sum of acceleration values for the last second,
            we must use only positive values. */
     INT32U score = 0;
@@ -219,7 +245,10 @@ INT16U CalculateScore(ACCEL_BUFFERS* buffer) {
     return (INT16U)(score/8000);
 }
 
-void PITPend() {
+/****************************************************************************************
+* PitPend - Blocking function, exits when PIT has reached 0 in current cycle
+****************************************************************************************/
+static void PITPend() {
     INT32U timingCounter =  0;
     while((PIT->CHANNEL[0].TFLG & (PIT_TFLG_TIF_MASK)) == 0) { // Wait for PIT to fire
         timingCounter++;
@@ -231,7 +260,11 @@ void PITPend() {
     }
 }
 
-void TrickIdentify(ACCEL_BUFFERS* buffer) {
+/****************************************************************************************
+* TrickIdentify - Identifies the most likely trick match between last recorded movement
+*                 and the trick database
+****************************************************************************************/
+static void TrickIdentify(ACCEL_BUFFERS* buffer) {
     INT32S corrCoeffX, corrCoeffY, corrCoeffZ;
     INT32S corr_means[NUM_DB_TRICKS];
     INT8U div_count;
@@ -281,7 +314,7 @@ void TrickIdentify(ACCEL_BUFFERS* buffer) {
 *            -  modified slightly for int64u input
 * https://stackoverflow.com/questions/1100090/looking-for-an-efficient-integer-square-root-algorithm-for-arm-thumb2
 ****************************************************************************************/
-INT64U SquareRoot(INT64U a_nInput)
+static INT64U SquareRoot(INT64U a_nInput)
 {
     INT64U op  = a_nInput;
     INT64U res = 0;
@@ -303,7 +336,11 @@ INT64U SquareRoot(INT64U a_nInput)
     return res;
 }
 
-INT32S CorrelCoeff(INT16S* curr_data_buffer, INT16S* db_buffer) {
+/****************************************************************************************
+* CorrelCoeff - Support function for TrickIdentify, correlates the correlation coefficient
+*               between the two data sets given
+****************************************************************************************/
+static INT32S CorrelCoeff(INT16S* curr_data_buffer, INT16S* db_buffer) {
     int16_t mean_db, mean_curr;
 
     int32_t adj_db[SAMPLES_PER_BLOCK];
@@ -353,7 +390,10 @@ INT32S CorrelCoeff(INT16S* curr_data_buffer, INT16S* db_buffer) {
     return (int32_t)(((int64_t)numerator * (1UL << 31)) / denominator);
 }
 
-void AccelDataAbsoluteValues(ACCEL_BUFFERS* buffer) {
+/****************************************************************************************
+* AccelDataAbsoluteValues - Populate given buffer structure with absolute value buffers
+****************************************************************************************/
+static void AccelDataAbsoluteValues(ACCEL_BUFFERS* buffer) {
     arm_abs_q15(buffer->samplesX, buffer->absX, SAMPLES_PER_BLOCK);
     arm_abs_q15(buffer->samplesY, buffer->absY, SAMPLES_PER_BLOCK);
     arm_abs_q15(buffer->samplesZ, buffer->absZ, SAMPLES_PER_BLOCK);
@@ -362,12 +402,11 @@ void AccelDataAbsoluteValues(ACCEL_BUFFERS* buffer) {
 /****************************************************************************************
 * PITInit - Configure PIT to trigger every 1.25mS, the sample period of the accelerometer
 ****************************************************************************************/
-void PITInit() {
+static void PITInit() {
     SIM->SCGC6 |= SIM_SCGC6_PIT(1);  // Enable PIT module
     PIT->MCR = PIT_MCR_MDIS(0);     // Enable clock for standard PIT timers
     PIT->CHANNEL[0].LDVAL = LDVAL_800HZ;
     PIT->CHANNEL[0].TCTRL = PIT_TCTRL_TEN(1); // Enable PIT Timer
 }
-
 
 /********************************************************************************/
