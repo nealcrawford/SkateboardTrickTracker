@@ -22,7 +22,7 @@ static INT16U CalculateScore(ACCEL_BUFFERS* buffer);
 static INT8U AccelTriggered(ACCEL_DATA_3D* AccelData3D);
 static void PrintAccelBuffers(ACCEL_BUFFERS* buffer);
 static void FillAccelBuffers(ACCEL_DATA_3D* AccelData3D, ACCEL_BUFFERS* buffer, INT16U* bufferIndexPtr);
-static void TrickIdentify(ACCEL_BUFFERS* buffer);
+static INT32U TrickIdentify(ACCEL_BUFFERS* buffer);
 static void NormalizeAccelData(ACCEL_BUFFERS* buffer);
 static void AccelDataAbsoluteValues(ACCEL_BUFFERS* buffer);
 static INT32S CorrelCoeff(INT16S* curr_data_buffer, INT16S* db_buffer);
@@ -54,6 +54,9 @@ void main(void) {
     AccelInit();
 
     ProcessFlag = 0;
+    INT8U backNForthCount = 0;
+    INT8U barrelRollCount = 0;
+    INT8U spin180Count = 0;
     INT16U currentScore = 0;
     INT16U bufferIndex = 0;
     INT8U RecordAccel = 0;
@@ -80,8 +83,31 @@ void main(void) {
                 currentScore = CalculateScore(&SampleData);
                 NormalizeAccelData(&SampleData);
                 //PrintAccelBuffers(&SampleData);
-                TrickIdentify(&SampleData);
+                INT32U trick_id = TrickIdentify(&SampleData);
+                if (trick_id == 1) {
+                    backNForthCount += 1;
+                    BIOPutStrg("BackNForth");
+                    BIOOutCRLF();
+                    BIOPutStrg("Total: ");
+                    BIOOutDecByte(backNForthCount, 0);
+                } else if (trick_id == 2) {
+                    barrelRollCount += 1;
+                    BIOPutStrg("Barrel Roll");
+                    BIOOutCRLF();
+                    BIOPutStrg("Total: ");
+                    BIOOutDecByte(barrelRollCount, 0);
+                } else if (trick_id == 3) {
+                    spin180Count += 1;
+                    BIOPutStrg("Spin 180");
+                    BIOOutCRLF();
+                    BIOPutStrg("Total: ");
+                    BIOOutDecByte(spin180Count, 0);
+                } else {
+                    BIOPutStrg("Not recognized");
+                }
+                BIOOutCRLF();
                 BIOOutDecWord(currentScore, 1);
+                BIOOutCRLF();
                 BIOOutCRLF();
             }
             /* Reset for regular sampling operation */
@@ -202,7 +228,7 @@ static void PrintAccelBuffers(ACCEL_BUFFERS* buffer) {
 ****************************************************************************************/
 static INT8U AccelTriggered(ACCEL_DATA_3D* AccelData3D) {
     INT8U triggerStatus = 0;
-    if ((AccelData3D->x > 4000 || AccelData3D->x < -4000) || (AccelData3D->y > 4000 || AccelData3D->y < -4000) || (AccelData3D->z > 4000 || AccelData3D->z < -4000)) {
+    if ((AccelData3D->x > 4000 || AccelData3D->x < -4000) || (AccelData3D->y > 4000 || AccelData3D->y < -4000) || (AccelData3D->z > 8000 || AccelData3D->z < -4000)) {
         triggerStatus = 1;
     } else {
         triggerStatus = 0;
@@ -264,49 +290,40 @@ static void PITPend() {
 * TrickIdentify - Identifies the most likely trick match between last recorded movement
 *                 and the trick database
 ****************************************************************************************/
-static void TrickIdentify(ACCEL_BUFFERS* buffer) {
+static INT32U TrickIdentify(ACCEL_BUFFERS* buffer) {
     INT32S corrCoeffX, corrCoeffY, corrCoeffZ;
     INT32S corr_means[NUM_DB_TRICKS];
-    INT8U div_count;
     INT64S current_mean;
     ACCEL_BUFFERS db_buffer;
 
     for (INT8U i = 0; i < NUM_DB_TRICKS; i++) {
-        div_count = 0;
         current_mean = 0;
         LoadDBBuffer(&db_buffer, i);
         corrCoeffX = CorrelCoeff(buffer->samplesX, db_buffer.samplesX);
         corrCoeffY = CorrelCoeff(buffer->samplesY, db_buffer.samplesY);
         corrCoeffZ = CorrelCoeff(buffer->samplesZ, db_buffer.samplesZ);
-        if (corrCoeffX > 0) {
-            current_mean += corrCoeffX;
-            div_count += 1;
-        }
-        if (corrCoeffY > 0) {
+
+        if (i == 0) {
             current_mean += corrCoeffY;
-            div_count += 1;
-        }
-        if (corrCoeffZ > 0) {
             current_mean += corrCoeffZ;
-            div_count += 1;
+        } else if (i == 1) {
+            current_mean += corrCoeffX;
+            current_mean += corrCoeffZ;
+        } else if (i == 2) {
+            current_mean += corrCoeffX;
+            current_mean += corrCoeffY;
         }
-        if (div_count > 0) {
-            corr_means[i] = (INT32S)(current_mean/div_count);
-        }
+        corr_means[i] = (INT32S)(current_mean/2);
     }
 
     q31_t max_val;
     INT32U max_index;
     arm_max_q31(corr_means, NUM_DB_TRICKS, &max_val, &max_index);
-
-    if (max_index == 0) {
-        BIOPutStrg("BackNForth");
-    } else if (max_index == 1) {
-        BIOPutStrg("Barrel Roll");
-    } else if (max_index == 2) {
-        BIOPutStrg("Spin 180");
+    if (max_val > (1 << 28)) {
+        return max_index + 1;
+    } else {
+        return 0;
     }
-    BIOOutCRLF();
 }
 
 /****************************************************************************************
