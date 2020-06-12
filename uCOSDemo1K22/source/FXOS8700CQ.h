@@ -3,7 +3,6 @@
  *              on I2C0 as wired on the K65 tower board.
  * AUTHOR: Todd Morton
  * HISTORY: Started 11/23/14
- * Revision: Revised for the K65 board. TDm
  * Revision: 05/11/2020 by Neal Crawford for the FXOS8700CQ accelerometer on K22F
  ***********************************************************************/
 #ifndef ACCEL_DEF

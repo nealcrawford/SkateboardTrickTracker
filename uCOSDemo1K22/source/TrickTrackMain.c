@@ -228,7 +228,7 @@ static void PrintAccelBuffers(ACCEL_BUFFERS* buffer) {
 ****************************************************************************************/
 static INT8U AccelTriggered(ACCEL_DATA_3D* AccelData3D) {
     INT8U triggerStatus = 0;
-    if ((AccelData3D->x > 4000 || AccelData3D->x < -4000) || (AccelData3D->y > 4000 || AccelData3D->y < -4000) || (AccelData3D->z > 8000 || AccelData3D->z < -4000)) {
+    if ((AccelData3D->x > 4000 || AccelData3D->x < -4000) || (AccelData3D->y > 4000 || AccelData3D->y < -4000) || (AccelData3D->z > 10000 || AccelData3D->z < -4000)) {
         triggerStatus = 1;
     } else {
         triggerStatus = 0;
@@ -303,17 +303,10 @@ static INT32U TrickIdentify(ACCEL_BUFFERS* buffer) {
         corrCoeffY = CorrelCoeff(buffer->samplesY, db_buffer.samplesY);
         corrCoeffZ = CorrelCoeff(buffer->samplesZ, db_buffer.samplesZ);
 
-        if (i == 0) {
-            current_mean += corrCoeffY;
-            current_mean += corrCoeffZ;
-        } else if (i == 1) {
-            current_mean += corrCoeffX;
-            current_mean += corrCoeffZ;
-        } else if (i == 2) {
-            current_mean += corrCoeffX;
-            current_mean += corrCoeffY;
-        }
-        corr_means[i] = (INT32S)(current_mean/2);
+        current_mean += corrCoeffX;
+        current_mean += corrCoeffY;
+        current_mean += corrCoeffZ;
+        corr_means[i] = (INT32S)(current_mean/3);
     }
 
     q31_t max_val;
